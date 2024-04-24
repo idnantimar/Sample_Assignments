@@ -1,0 +1,634 @@
+ ---
+title: "**Robust Statistics: Assignment-1**"
+author: "Ramit Nandi | MD2211"
+date: "24th March 2024"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 4
+    df_print: kable
+fontsize: 12pt
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+---
+
+\newpage 
+
+
+
+#   Problem 1.
+
+>   **Simulate data from $N(0,1)$. Using the $N(\mu,\sigma^2)$ model, we want to estimate $\mu$ and $\sigma^2$. Use sample sizes $n = 20,50,100$ and a replication number $r = 1000$. Report the 'bias' and 'MSE' of your estimates. Use the following methods:**
+
+>   1.  **Maximum likelihood.**
+
+>   2.  **Robust estimators of location and scale: $\hat{\mu} =$ median and $\hat{\sigma} = \frac{median_{i}|X_i - median{X}|}{0.6743}$.**
+
+>   3.  **Minimum Hellinger Distance estimator with and without model smoothing (using Gaussian Kernel).** 
+
+
+## Solution:
+
+-   We note that the maximum likelihood estimates of $\mu$ and $\sigma^2$ are as follows:
+
+\begin{equation} \label{eq:1}
+\hat\mu = \frac{1}{n}\sum_{i=1}^{n}X_i \qquad \hat{\sigma^2} = \frac{1}{n}\sum_{i=1}^{n}{(X_i-\hat\mu)^2}
+\end{equation}
+
+-   We obtain the **Minimum Hellinger Distance estimator (without model smoothing)** by minimizing $\int(\sqrt{f_n^*} - \sqrt{f_{\theta}})^2$ which is equivalent to maximizing $\int{\sqrt{f_n^*}\sqrt{f_{\theta}}}$, where $\sqrt{f_n^*}$ is the **Gaussian kernel density estimate** obtained from the simulated data with optimal bandwidth of the order $n^{-1/5}$ (ideally bandwidth $h_n = s_n \times n^{-1/5}$, where $s_n$ is a robust estimator of scale). 
+
+-   In order to obtain the **model smoothed version**, we replace $f_{\theta}$ by $f_{\theta}^*$, which is obtained by **smoothing the model with the same Gaussian Kernel** (with bandwidth $h_n$) as discussed above. Note that $f_{\theta}^*$ can be evaluated as:
+
+\begin{equation} \label{eq:2}
+f_{\theta}^*(x) = \frac{1}{\sqrt{2\pi}.\sqrt{\sigma^2 + {h_n}^2}}\exp[-\frac{1}{\sigma^2 + {h_n}^2}(x-\mu)^2]
+\end{equation}
+
+-   In both cases, we use robust estimators of location and scale, $\hat{\mu} =$ median and $\hat{\sigma} = \frac{median_{i}|X_i - median{X}|}{0.6743}$ respectively as when required.
+
+Our findings have been summarized in the tables below:
+
+\small
+```{r}
+table_df = readRDS("Qn1/Bias_mu.rds")
+knitr::kable(table_df, caption = "Bias for $\\mu$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn1/MSE_mu.rds")
+knitr::kable(table_df, caption = "MSE for $\\mu$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn1/Bias_sigma.square.rds")
+knitr::kable(table_df, caption = "Bias for $\\sigma^2$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn1/MSE_sigma.square.rds")
+knitr::kable(table_df, caption = "MSE for $\\sigma^2$ over sample sizes")
+```
+
+\normalsize
+
+**COMMENT: ** Since **no contamination is present**, the **Maximum Likelihood Estimatior** has the **least bias and MSE** among the four. The Minimum Hellinger Distance Estimator performs better than the Robust Estimator in this situation, but it is not as efficient in performance as the MLE. Error decreases with increasing sample sizes. 
+
+The R code for the simulation is displayed below:
+
+\small
+```{r, echo=TRUE, eval=FALSE}
+n_samples = c(20,50,100)
+n_itr = 1000
+set.seed(101)
+library(dplyr)
+
+
+Bias_mu = data.frame(matrix(nrow = 3,ncol = 4),row.names = n_samples)
+MSE_mu = data.frame(matrix(nrow = 3,ncol = 4),row.names = n_samples)
+Bias_sigma.square = data.frame(matrix(nrow = 3,ncol = 4),row.names = n_samples)
+MSE_sigma.square = data.frame(matrix(nrow = 3,ncol = 4),row.names = n_samples)
+  # 4columns for 4 type of estimators
+names(Bias_mu) = names(MSE_mu) = 
+  names(Bias_sigma.square) = names(MSE_sigma.square) =
+  c("MLE","Robust","MHD_unsmooth","MHD_smooth")
+
+ 
+DATA = matrix(rnorm(100*n_itr),nrow=n_itr,byrow=T) 
+  # generating data all at once
+  # each row will be used for one iteration
+  # for sample size 20,50 only first 20,50 columns will be extracted 
+
+
+Helli.Dist_approx = function(theta,data,h,s=0) 
+# theta :(loc,var) , s :smoothness
+# integration is approximated upto a multiplicative constant, 
+# by sum of area of rectangles 
+# over a large number of equally spaced points from the support of the density
+{
+  f_n = density(data, kernel = "gaussian", bw = h)
+  f_theta = dnorm(f_n$x, mean = theta[1], sd = sqrt(theta[2]+s^2))
+  return(sum((sqrt(f_n$y)-sqrt(f_theta))^2))
+##NOTE: approximation can be improved using quadratic approximation of integration
+ # via stats::integrate() function , but that takes more run-time
+}
+
+
+#### SIMULATION ========================
+mu = 0
+sigma = 1
+One_iteration = function(data)
+{
+  mle_mu  = mean(data)
+  rob_mu  = median(data)
+  mle_square.sigma = mean((data - mle_mu)^2)
+  rob_sigma = median(abs(data-rob_mu))/0.6743
+    
+  h_n =  rob_sigma*n^(-1/5)
+  mhd_unsmooth = optim(c(mu,sigma^2),
+                       function(theta) Helli.Dist_approx(theta,data,h_n))$par 
+  mhd_smooth = optim(c(mu,sigma^2),
+                       function(theta) Helli.Dist_approx(theta,data,h_n,s=h_n))$par 
+
+  returnValue(c(mle_mu,rob_mu,mhd_unsmooth[1],mhd_smooth[1],
+                mle_square.sigma,rob_sigma^2,mhd_unsmooth[2],mhd_smooth[2]))
+}  
+
+
+for(idx in 1:length(n_samples))
+{## THE MAIN COMPUTATION CHUNK .....
+  n = n_samples[idx]
+  Data = DATA[,1:n]
+  Estimates = apply(Data,MARGIN=1,
+                    FUN=One_iteration) %>% t()
+  saveRDS(Estimates,paste0("Estimates_",n,".rds"))
+    # each row corresponds to one iteration
+    # first 4column are for mu, last 4columns are for sigma^2
+  mu_hat = Estimates[,1:4]
+  square.sigma_hat = Estimates[,5:8]
+  
+  Bias_mu[idx,] = abs(mu_hat-mu) %>% apply(MARGIN=2,mean)
+  MSE_mu[idx,] = (mu_hat-mu)^2 %>% apply(MARGIN=2,mean)
+  
+  Bias_sigma.square[idx,] = abs(square.sigma_hat-sigma^2) %>% apply(MARGIN=2,mean)
+  MSE_sigma.square[idx,] = (square.sigma_hat-sigma^2)^2 %>% apply(MARGIN=2,mean)
+  
+}
+
+saveRDS(Bias_mu,"Bias_mu.rds")
+saveRDS(MSE_mu,"MSE_mu.rds")
+saveRDS(Bias_sigma.square,"Bias_sigma.square.rds")
+saveRDS(MSE_sigma.square,"MSE_sigma.square.rds")
+
+
+```
+
+
+\newpage 
+
+#   Problem 2.
+
+>   **Look at the following real life data sets.** 
+
+>   (a) **Newcomb's Light Speed Data** 
+
+>   (b) **Short's Data**
+
+>   (c) **Telephone Fault Data** 
+
+>   **For each of these examples, use the model 'smoothed' and 'non-smoothed' versions to find estimates of $\mu$ and $\sigma^2$ under the Normal model. Also report the MLEs.**
+
+## Solution:
+
+###   (a): Newcomb's Light Speed Data
+
+The dataset, which consists of 66 of **Newcomb's measurements** of the _passage of light_ (in $\times 10^{-3} + 24.8$ millionths of a second) is given below:
+
+\small
+```{r ,out.height="55%",out.width="55%"}
+newcomb = c(28,26,33,24,34,-44,27,16,40,-2,29,22,24,21,25,30,23,29,31,19,
+            24,20,36,32,36,28,25,21,28,29,37,25,28,26,30,32,36,26,60,22,
+            36,23,27,27,28,27,31,27,26,33,26,32,32,24,39,28,24,25,32,25,29,27,28,29,16,23)
+knitr::include_graphics("Qn2/newcomb.PNG")
+```
+
+\normalsize
+
+Assuming a $N(\mu,\sigma^2)$ model, we use the **model smoothed** and **unsmoothed** Minimum Hellinger Distance estimators to estimate $\mu$ and $\sigma^2$. Particulars and properties of the estimators have been expounded upon in the previous problem. Our findings have been presented in the table below. 
+
+\small
+```{r}
+df = readRDS("Qn2/output_newcomb.rds")
+knitr::kable(df, caption = "Findings for Newcomb's Light Speed Data")
+```
+
+\normalsize
+
+**Comment:** The Model smoothed and unsmoothed estimators seem to give more reliable estimates of location and scale than the MLE. 
+
+\newpage 
+
+###   (b): Short's Data
+
+The dataset, which consists of 17 of **Short's** determinations of the _parallax of the sun_ (in seconds of a degree) based on transits of Venus, is given below:
+
+\small
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+short   = c(8.65,8.35,8.71,8.31,8.36,8.58,7.8,7.71,8.3,9.71,8.5,8.28,9.87,8.86,5.76,8.44,8.23)
+knitr::kable(matrix(c(short,'-'),ncol=3))
+```
+
+\normalsize
+
+Assuming a $N(\mu,\sigma^2)$ model, we use the **model smoothed** and **unsmoothed** Minimum Hellinger Distance estimators to estimate $\mu$ and $\sigma^2$. Particulars and properties of the estimators have been expounded upon in the previous problem. Our findings have been presented in the table below. 
+
+\small
+```{r}
+df = readRDS("Qn2/output_short.rds")
+knitr::kable(df, caption = "Findings for Short's Parallax Data")
+```
+
+\normalsize
+
+**Comment:** The Model smoothed and unsmoothed estimators seem to give marginally more reliable estimates of location and scale than the MLE. 
+
+###   (c): Telephone Fault Data
+
+The dataset, which consists of *Inverse Fault-Rate Differences for telephone lines* in 14 pairs of areas, is given below:
+
+\small
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+tele_line = c(-988,-135,-78,3,59,83,93,110,189,197,204,229,269,310)
+knitr::kable(matrix(tele_line,ncol=7))
+```
+
+\normalsize
+
+Assuming a $N(\mu,\sigma^2)$ model, we use the **model smoothed** and **unsmoothed** Minimum Hellinger Distance estimators to estimate $\mu$ and $\sigma^2$. Particulars and properties of the estimators have been expounded upon in the previous problem. Our findings have been presented in the table below. 
+
+\small
+```{r}
+df = readRDS("Qn2/output_tele_line.rds")
+knitr::kable(df, caption = "Findings for Telephone Fault Data")
+```
+
+\normalsize
+
+**Comment:** The Model smoothed and unsmoothed estimators seem to give more reliable estimates of location and scale than the MLE. 
+
+The R code for the simulation is as given below:
+
+\small
+```{r, echo=TRUE, eval=FALSE}
+load("Qn2.RData") 
+  # it contains the readings from three mentioned datasets
+DATA = list('newcomb'=newcomb,
+            'short'=short,
+            'tele_line'=tele_line)
+
+for(d in names(DATA)){
+  Data = DATA[[d]]
+  n = length(Data)
+  
+  mle_loc = mean(Data)
+  mle_sc  = mean((Data - mle_loc)^2)
+  mle = c(mle_loc,mle_sc)
+    
+  h_n =  (median(abs(Data-median(Data)))/0.6743)*n^(-1/5)
+   # Helli.Dist_approx function from Qn1
+   # passing 'mle' as the initial guess for numerical optimization
+  mhd_unsmooth = optim(mle,
+                       function(theta) Helli.Dist_approx(theta,Data,h_n))$par 
+  mhd_smooth = optim(mle,
+                       function(theta) Helli.Dist_approx(theta,Data,h_n,s=h_n))$par 
+
+  df.output = data.frame(MLE=mle,
+                         MHD_unsmooth=mhd_unsmooth,
+                         MHD_smooth=mhd_smooth,
+                         row.names = c('mu','square.sigma'))
+  saveRDS(df.output,paste0('output_',d,'.rds'))
+}
+
+
+```
+
+
+\newpage 
+
+#   Problem 3. 
+
+>   **Generate data from $(1-\epsilon)N(0,1)$ + $\epsilon N(8,1)$. Choose $\epsilon = 0.05,0.1$. Repeat the exercise in Problem 1.** 
+
+## Solution: 
+
+We have to generate data from the **contaminated distribution** $(1-\epsilon)N(0,1)$ + $\epsilon N(8,1)$. To do this:
+
+-   We randomly generate an observation $X \sim Ber(\epsilon)$ distribution (where $\mathbb{P}(X=1) = \epsilon$). 
+-   If $X=1$, we sample from $N(8,1)$ distribution. Otherwise, we sample from $N(0,1)$ distribution.
+
+The R code for the simulation is identical as that in Problem 1. Only the data generating process, being different, can be executed by the following code:
+
+\small
+```{r, echo=TRUE, eval=FALSE}
+genetate.contamination = function(eps,n){
+  id = rbinom(n,size=1,prob=eps)
+    # indicator for contamination
+    # TRUE with probability eps, FALSE otherwise
+  population_0 = rnorm(n)
+  ## Note: sampling x~N(8,1) is same as sampling x'+8 ,x'~N(0,1)
+   # So in this special case we don't need to sample again from population_1
+   # simply use 8+population_0 where needed 
+  ## It saves time 
+  return(population_0 + 8*id)
+}
+
+
+###  For contamination probability 0.05 =======
+
+# DATA = matrix(genetate.contamination(0.05,100*n_itr),nrow=n_itr,byrow=T)
+# other compuation same as Qn1 ...
+# ...
+
+###  For contamination probability 0.1 =======
+
+# DATA = matrix(genetate.contamination(0.1,100*n_itr),nrow=n_itr,byrow=T)
+# other compuation same as Qn1 ...
+# ...
+
+
+```
+
+\normalsize
+
+We now repeat the tasks in Problem 1. Our results have been summarized in the tables below:
+
+
+###    For contamination probability 0.05
+
+
+\small
+```{r}
+table_df = readRDS("Qn3/eps_5/Bias_mu.rds")
+knitr::kable(table_df, caption = "Bias for $\\mu$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn3/eps_5/MSE_mu.rds")
+knitr::kable(table_df, caption = "MSE for $\\mu$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn3/eps_5/Bias_sigma.square.rds")
+knitr::kable(table_df, caption = "Bias for $\\sigma^2$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn3/eps_5/MSE_sigma.square.rds")
+knitr::kable(table_df, caption = "MSE for $\\sigma^2$ over sample sizes")
+```
+
+
+\normalsize
+
+###    For contamination probability 0.1
+
+\small
+```{r}
+table_df = readRDS("Qn3/eps_10/Bias_mu.rds")
+knitr::kable(table_df, caption = "Bias for $\\mu$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn3/eps_10/MSE_mu.rds")
+knitr::kable(table_df, caption = "MSE for $\\mu$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn3/eps_10/Bias_sigma.square.rds")
+knitr::kable(table_df, caption = "Bias for $\\sigma^2$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn3/eps_10/MSE_sigma.square.rds")
+knitr::kable(table_df, caption = "MSE for $\\sigma^2$ over sample sizes")
+```
+
+
+\normalsize
+
+**COMMENT: ** The bias and MSE increases with the increasing contamination. The presence of contamination shows that the **Maximum Likelihood Estimator fails to perform well** (from the standpoint of Bias and MSE), while the **Robust Estimator** and **Minimum Hellinger Distance Estimator perform satisfactorily** under such a situation. Error decreases with increasing sample sizes.
+
+
+\newpage 
+
+#   Problem 4.
+
+>   (a): **Generate data from Poisson($\lambda$=3) distribution, with sample sizes $n = 20,50,100$ and replication of 1000. Assume a Poisson($\theta$) model. Estimate the mean parameter by the following methods:**
+
+>   1. **Maximum Likelihood**
+
+>   2. **Minimum Hellinger Distance [$2\sum(\sqrt{d}-\sqrt{f_\theta})^2$]**
+
+>   3. **Minimum Penalized Hellinger Distance. [$2\sum_{d>0}(\sqrt{d}-\sqrt{f_\theta})^2 + \sum_{d=0}{f_\theta}$]**
+
+>   4. **Symmetric Chi-square. [$\sum{\frac{(d-f_\theta)^2}{(d+f_\theta)}}$]**
+
+>   **Report the bias and MSE in each case. Here $d$ is the relative frequency distribution of the data generated.**
+
+>   (b):**Repeat** (a) **when the data is generated from $(1-\epsilon)Poi(3)$ + $\epsilon Poi(15)$. Choose $\epsilon = 0.05,0.1$.**
+
+
+## Solution:
+-   The **maximum likelihood estimator** of the mean parameter of the Poisson model is the **sample mean**.
+
+-   The **Minimum Penalized Hellinger Distance (P-MHD) estimator** can alternatively be expressed as:
+
+\begin{equation} \label{eq:3}
+\hat{\theta}_{PHD} = \arg\min_{\theta}[2\sum_{d>0}(\sqrt{d}-\sqrt{f_\theta})^2 + \sum_{d=0}{f_\theta}] = \arg\min_{\theta}[2\sum_{d>0}(\sqrt{d}-\sqrt{f_\theta})^2 + 1 - \sum_{d>0}{f_\theta}]
+\end{equation}
+
+-   The **Minimum Symmetric Chi-square (MCS) estimator**  can be expressed as:
+
+\begin{equation} \label{eq:4}
+\hat{\theta}_{CS} = \arg\min_{\theta}[\sum{\frac{(d-f_\theta)^2}{(d+f_\theta)}}] = \arg\min_{\theta}[\sum_{d>0}{\frac{(d-f_\theta)^2}{(d+f_\theta)}} + 1 - \sum_{d>0}{f_\theta}] 
+\end{equation}
+
+Our findings have been summarized in the tables below:
+
+###   (a): Uncontaminated Distribution
+
+\small
+```{r}
+table_df = readRDS("Qn4/Bias_lambda.rds")
+knitr::kable(table_df, caption = "Bias for $\\lambda$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn4/MSE_lambda.rds")
+knitr::kable(table_df, caption = "MSE for $\\lambda$ over sample sizes")
+```
+
+
+\normalsize
+
+**COMMENT: ** We see that the **Maximum Likelihood estimator** performs the best when data is generated from a pure, uncontaminated distribution. Error decreases with increasing sample sizes.
+
+The R code for the simulation is displayed below:
+
+\small
+```{r, echo=TRUE, eval=FALSE}
+n_samples = c(20,50,100)
+n_itr = 1000
+set.seed(101)
+library(dplyr)
+
+
+Bias_lambda = data.frame(matrix(nrow = 3,ncol = 4),row.names = n_samples)
+MSE_lambda = data.frame(matrix(nrow = 3,ncol = 4),row.names = n_samples)
+  # 4columns for 4 type of estimators
+names(Bias_lambda) = names(MSE_lambda) = 
+  c("MLE","MHD","P_MHD","MCS")
+
+
+DATA = matrix(rpois(100*n_itr,lambda=3),
+              nrow=n_itr,byrow=T) 
+  # generating data all at once
+  # each row will be used for one iteration
+  # for sample size 20,50 only first 20,50 columns will be extracted 
+
+
+
+# Relative Frequency Distribution .....
+d = function(x)
+{
+  counts = table(x) %>% data.frame(row.names = T) 
+  colnames(counts) = 'd'
+  return(counts/sum(counts))
+}
+
+## Hellinger Distance .....
+HD = function(theta,data)
+{
+  df = d(data)
+  df$f = dpois(as.numeric(row.names(df)),theta)
+  return((sqrt(df$d)-sqrt(df$f))^2 %>% sum())
+  # multiplicative constant 2 does not affect optimization 
+}
+
+
+## Penalized Hellinger Distance .....
+P_HD = function(theta,data)
+{
+  df = d(data)
+  df$f = dpois(as.numeric(row.names(df)),theta)
+  return((2*(sqrt(df$d)-sqrt(df$f))^2 - df$f) %>% sum) 
+  # additive constant 1 does not affect optimization 
+}  
+  
+
+## Symmetric Chi-Square .....
+CS = function(theta,data)
+{
+  df = d(data)
+  df$f = dpois(as.numeric(row.names(df)),theta)
+  return(((((df$d-df$f)^2)/(df$d+df$f)) - df$f) %>% sum) 
+  # additive constant 1 does not affect optimization 
+}  
+
+  
+#### SIMULATION ========================
+lambda = 3
+One_iteration = function(data)
+{
+  mle = mean(data)
+  mhd = optim(lambda,function(theta) HD(theta,data))$par
+  p.mhd = optim(lambda,function(theta) P_HD(theta,data))$par
+  mcs = optim(lambda,function(theta) CS(theta,data))$par
+  returnValue(c(mle,mhd,p.mhd,mcs))
+}  
+
+
+for(idx in 1:length(n_samples))
+{## THE MAIN COMPUTATION CHUNK .....
+  n = n_samples[idx]
+  Data = DATA[,1:n]
+  Estimates = apply(Data,MARGIN=1,
+                    FUN=One_iteration) %>% t()
+  saveRDS(Estimates,paste0("Estimates_",n,".rds"))
+    # each row corresponds to one iteration
+
+  Bias_lambda[idx,] = abs(Estimates-lambda) %>% apply(MARGIN=2,mean)
+  MSE_lambda[idx,] = (Estimates-lambda)^2 %>% apply(MARGIN=2,mean)
+  
+}
+
+saveRDS(Bias_lambda,"Bias_lambda.rds")
+saveRDS(MSE_lambda,"MSE_lambda.rds")
+
+```
+
+\normalsize
+
+###    (b): Contaminated Distributions
+
+We have to generate data from the **contaminated distribution** $(1-\epsilon)Poi(3)$ + $\epsilon Poi(15)$. To do this:
+
+-   We randomly generate an observation $X \sim Ber(\epsilon)$ distribution (where $\mathbb{P}(X=1) = \epsilon$). 
+-   If $X=1$, we sample from $Poi(15)$ distribution. Otherwise, we sample from $Poi(3)$ distribution.
+
+\small
+```{r, echo=TRUE, eval=FALSE}
+genetate.contamination = function(eps,n){
+  id = rbinom(n,size=1,prob=eps)
+    # indicator for contamination
+    # TRUE with probability eps, FALSE otherwise
+  return(sapply(id,FUN = function(t) ifelse(t,
+                                     rpois(1,lambda=15),
+                                     rpois(1,lambda=3))))
+
+}
+
+
+###  For contamination probability 0.05 =======
+
+# DATA = matrix(genetate.contamination(0.05,100*n_itr),nrow=n_itr,byrow=T)
+# other compuation same as Qn4.a ...
+# ...
+
+###  For contamination probability 0.1 =======
+
+# DATA = matrix(genetate.contamination(0.1,100*n_itr),nrow=n_itr,byrow=T)
+# other compuation same as Qn4.a ...
+# ...
+
+
+```
+
+\normalsize
+
+We now repeat the tasks in Problem 4(a). Our results have been summarized in the tables below:
+
+####   Contamination probability = 0.05 
+
+
+\small
+```{r}
+table_df = readRDS("Qn4/eps_5/Bias_lambda.rds")
+knitr::kable(table_df, caption = "Bias for $\\lambda$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn4/eps_5/MSE_lambda.rds")
+knitr::kable(table_df, caption = "MSE for $\\lambda$ over sample sizes")
+```
+
+
+\normalsize
+
+
+####   Contamination probability = 0.1 
+
+
+\small
+```{r}
+table_df = readRDS("Qn4/eps_10/Bias_lambda.rds")
+knitr::kable(table_df, caption = "Bias for $\\lambda$ over sample sizes")
+```
+
+```{r}
+table_df = readRDS("Qn4/eps_10/MSE_lambda.rds")
+knitr::kable(table_df, caption = "MSE for $\\lambda$ over sample sizes")
+```
+
+
+\normalsize
+
+**COMMENT: ** The bias and MSE increases with the increasing contamination. The presence of contamination shows that the **Maximum Likelihood Estimator fails to perform well** (from the standpoint of Bias and MSE), while the **Minimum Hellinger Distance Estimator perform satisfactorily** under such a situation. Error decreases with increasing sample sizes.
+
+
