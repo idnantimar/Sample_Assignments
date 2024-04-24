@@ -1,0 +1,284 @@
+---
+title: "Effectiveness of Social Media Ads."
+subtitle: "GAM - Classification | Assignment - 5 | Pattern Recognition"
+author: "RAMIT NANDI || MD2211"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    df_print: kable
+fontsize: 12pt
+
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,
+                      message = F,
+                      warning = F,
+                      fig.align = "center")
+
+
+####libs------------------------------------------
+library(mgcv)
+library(ggplot2)
+
+
+#### working directory ---------------------------
+setwd("G:\\ASSIGNMENTS\\ASSIGNMENTS-PATTERN_RECOGNITION\\GAM")
+
+set.seed(101)
+```
+
+
+---
+
+\newpage
+
+# DATA
+
+The dataset contains details of the purchase of a product based on social network advertisements. The data has 400 observations,  looks as follows ...  
+
+```{r Data}
+Data = read.csv("G:\\ASSIGNMENTS\\ASSIGNMENTS-PATTERN_RECOGNITION\\RVM\\social.CSV")
+
+Y = Data$Purchased
+target<-function(y) return(factor(y,labels=c("Not Purchased","Purchased")))
+head(Data,10)
+```
+
+*GOAL:*  Predicting whether a person will buy a product displayed on a social network advertisement based on his/her gender , age and approximate Salary. 
+
+\
+
+**EDA** 
+
+* Target class belongs to two discrete categories of purchased and not purchased. [Throughout the report , Red colour will denote 'Not Purchased' , Green colour will denote 'Purcased'] 
+```{r , out.height="30%"}
+
+plotrix::pie3D(c(length(Y)-sum(Y),sum(Y)),labels=c(length(Y)-sum(Y),sum(Y)),col=c("red","green"))
+legend("topright", c("Not Purchased","Purchased"), fill = c("red","green"))
+
+```
+
+
+* *Gender:* Gender does not affect the purchase status much here. Given a person is male, the chance that he will buy the product is very similar to the chance of purchase ,given the person is female .
+```{r, out.width="60%"}
+
+plot((factor(Data$Gender)),target(Y),xlab="Gender",ylab='',main="Gender vs. Purchase status")
+
+```
+
+* *Salary:* Those who purchase the product , have on average higher salary than those who do not.
+
+```{r , out.width="45%" , fig.show='hold'}
+Data$EstimatedSalary->Salary
+hist(Salary)
+plot(target(Y),Salary,xlab='',ylab="Salary",main = "Salary vs. Purchase status" )
+```
+
+* *Age:* Those who purchase the product , are on average older than those who do not. 
+
+```{r , out.width="45%" , fig.show='hold'}
+Data$Age->Age
+hist(Age)
+plot(target(Y),Age,xlab='',ylab="Age",main = "Age vs. Purchase status" )
+```
+
+**NOTE:** Based on some earlier analysis on this data , we know -
+
+* The decision boundary is not linear in terms of the predictors.
+\
+* The predictor 'Gender' is not that much important.
+
+Let's check what GAM concludes on this data.
+
+\
+\
+\small 
+```{r,echo=TRUE}
+# preprocessing .............
+Data$Gender = factor(Data$Gender)
+Scaled_ = scale(Data[c("Age","EstimatedSalary")])
+Data[c("Age","EstimatedSalary")] = Scaled_
+# 80-20 Train-Test split
+split_ix = caTools::sample.split(Data$Purchased,0.8)
+TRAIN = subset(Data,split_ix==T)
+TEST = subset(Data,split_ix==F)
+
+```
+\normalsize
+
+\newpage 
+
+# GAM in R using mgcv
+
+## Full Model
+We start our model with cubic splines on 'Age' and 'Salary' , the categorical predictor 'Gender' and its interaction with 'Age' and 'Salary'.
+
+\small
+```{r, echo=TRUE}
+
+
+
+full_GAM = gam(Purchased ~ 
+                 s(EstimatedSalary,bs='cr',k=20) +
+                 s(Age,bs='cr',k=20) +
+                 Gender +
+                 s(EstimatedSalary,by=Gender) + s(Age,by=Gender), 
+               data = TRAIN, family = binomial,
+               method = 'REML', select = TRUE)
+
+
+summary(full_GAM)
+```
+
+\normalsize
+
+**Interpretation:** Based on the partial effects plots (i.e. effect of a variable on the response , given the other variables are fixed) we see -
+
+* Salary has quite non-linear effect. 
+\
+* The effect of Age is almost linear.
+\
+* We do not see significant effect of Gender, as the confidence interval for estimated effect of Gender-Male contains the baseline 0. 
+
+
+```{r,out.height="40%"}
+par(mfrow=c(1,2))
+plot(full_GAM,select = 1,scale = 0)
+plot(full_GAM, select = 2,scale = 0)
+par(mfrow=c(1,1))
+```
+```{r,out.width="55%"}
+plot(full_GAM,all.terms = T,select = 7)
+
+```
+
+
+
+## Simplified Model after variable selection
+
+Based on the partial effects plots as well as the p-values in model summary above, we get -
+
+* 'Age' & 'Salary' as significant predictors. 
+\
+* The 'Gender' is not significant, so it is discarded along with its interaction terms. 
+\
+* Also we replace spline of 'Age' with just a linear term.
+
+\small
+```{r,echo=TRUE}
+Model = gam(Purchased ~ 
+                 s(EstimatedSalary,bs='cr',k=20) +
+                 Age , 
+               data = TRAIN, family = binomial,
+               method = 'REML', select = TRUE)
+
+
+```
+\normalsize
+Comparing AIC and BIC with full-model, we see the simple one is actually better one here (rule of thumb: >2unit difference in AIC or BIC is considered as statistically significant, lower the AIC or BIC better the model).
+\small
+```{r}
+AIC(full_GAM,Model)
+```
+```{r}
+BIC(full_GAM,Model)
+```
+\normalsize
+
+Hence, our simplified model is accepted.
+
+# Comparison with GLM (Logistic Regression)
+
+\small
+```{r,echo=TRUE}
+Model_GLM = glm(Purchased ~ EstimatedSalary + Age + Gender,
+                data = TRAIN, family = binomial)
+
+```
+```{r}
+AIC(Model,Model_GLM)
+BIC(Model,Model_GLM)
+```
+
+\normalsize 
+
+Clearly, GAM performs much better than GLM, though it uses more df, so more complex model and more computation involved.
+
+# Accuracy & Confusion Matrix
+
+**On Train Data**
+
+```{r}
+predict_class = function(x) factor(predict(Model,x)>0,labels = c(0,1))
+
+M = table(predict_class(TRAIN),TRAIN$Purchased) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+M
+cat("Accuracy: ", sum(diag(M))/sum(M))
+
+```
+
+
+**On Test Data**
+
+```{r}
+
+M = table(predict_class(TEST),TEST$Purchased) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+M
+cat("Accuracy: ", sum(diag(M))/sum(M))
+
+```
+
+
+# Conclusion 
+
+```{r, out.width='45%',fig.show='hold'}
+set = TRAIN 
+X1 = seq(min(set[, 3]), max(set[, 3]), by = 0.05)
+X2 = seq(min(set[, 4]) , max(set[, 4]), by = 0.05)
+plot_set = expand.grid(X1, X2)
+grid_set = cbind(vector(length=dim(plot_set)[1]),vector(length=dim(plot_set)[1]),plot_set,vector(length=dim(plot_set)[1]))
+colnames(grid_set) = colnames(set)
+plot_set = as.matrix(plot_set)%*%diag(attr(Scaled_, "scaled:scale")) + matrix(rep(attr(Scaled_, "scaled:center"),each=dim(grid_set)[1]),ncol=2)
+plot_set = data.frame(plot_set)
+colnames(plot_set) = colnames(grid_set)[3:4]
+
+
+y_grid = predict_class(grid_set)
+ggplot(plot_set, aes(x = Age, y = EstimatedSalary, color = target(y_grid))) +
+  geom_point(size=1) +
+  scale_color_manual(values = c("Not Purchased" = "red", "Purchased" = "green")) +
+  guides(color = guide_legend(override.aes = list(shape = 15, size = 4))) +
+  labs(title = "Decision Boundary",
+       x = "Age",
+       y = "Salary",
+       color="status")
+
+
+y_proba = plogis(predict(Model,grid_set))
+ggplot(plot_set, aes(x = Age, y = EstimatedSalary, color = y_proba)) +
+  geom_point(size=3) +
+  scale_color_gradient(low = "cyan", high = "orange") +
+  labs(title = "predicted posterior probability of Purchase ",
+       x = "Age",
+       y = "Salary",
+       color = "probability")
+
+
+```
+
+GAM classification works well on this dataset.
+
+Based on the decision boundary we can say - Those with high salary are likely to puchase the product. Even with low salary, Young peoples are likely to purchase the product based on social-media ads.
+
+\hrulefill 
+\tiny 
+
+For time constrain here we used default hyperparameters for penalty coefficients and used only one 80-20 split to check model performance instead of k-folds. With those adjustments may me the model could be improved or generalized better. 

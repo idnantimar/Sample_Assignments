@@ -1,0 +1,417 @@
+---
+title: "Effectiveness of Social Media Ads."
+subtitle: "RELEVANCE VECTOR MACHINE - Classification | Assignment - 3 | Pattern Recognition"
+author: "RAMIT NANDI || MD2211"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    df_print: kable
+fontsize: 12pt
+
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,
+                      message = F,
+                      warning = F,
+                      fig.align = "center")
+
+
+####libs------------------------------------------
+library(latticeExtra)
+library(gridExtra)
+library(corrplot)
+library(foreach)
+library(klaR)
+library(kernlab)
+library(e1071)
+
+
+#### working directory ---------------------------
+setwd("G:\\ASSIGNMENTS\\ASSIGNMENTS-PATTERN_RECOGNITION\\RVM")
+
+
+```
+
+
+---
+
+
+\newpage 
+
+# INTRODUCTION 
+
+Relevance Vector Machine - is a kernel-trick machine learning algorithm , based on Bayesian Inference. It can deal with both 'Regression' & 'Classification' setup by specifying suitable Likelihood function. Here we will explain it for Classification case only.
+
+### Basic WorkFlow 
+
+Suppose we have $n$ i.i.d. observations $x_{1.},x_{2.},...,x_{n.}$ of some $p$ covariates ; $t_1,t_2,...,t_n$ corresponding observed responses ($1-of-k$ encoding for a categorical response with $k$ responses) , $\phi:\mathbb{R}^p\rightarrow \mathbb{R}^m$ any feature map. 
+
+$$ \mathbb{X}^{n \times p} = \begin{bmatrix}  x_{1}^T\\x_{2}^T\\ \vdots \\ x_{n}^T\end{bmatrix} , \boldsymbol{t}^{n\times k}=\begin{bmatrix} t_1 \\ t_2\\ \vdots \\ t_n\end{bmatrix},\Phi^{n \times m}=\begin{bmatrix}  \phi^T(x_{1})\\ \phi^T(x_{2})\\ \vdots \\ \phi^T(x_{n})\end{bmatrix}$$
+
+- *Choose Likelihood:* Let $\boldsymbol{W}^{m \times k}=[w_1,w_2,...,w_k]$ be our parameter of interest, such that $p_{ij}=\frac{exp(w_j^T\phi(x_i))}{\sum_{r=1}^kexp(w_r^T\phi(x_i))}$
+\
+Assume $t_i|x_i,\boldsymbol{W} \sim Multinomial(1;[p_{i1},p_{i2},...,p_{ik}]) \text{ }\text{ }\forall i=1,2...,n$, then we have joint likelihood
+
+$$f(\boldsymbol{t}|\mathbb{X},\boldsymbol{W}) = \prod_{i=1}^nf(t_i|x_i,\boldsymbol{W}) \propto \prod_{i=1}^n \prod_{j=1}^k p_{ij}$$
+
+- *Choose Prior:* We choose ARD prior for $\boldsymbol{W}=((w_{ij}))$ 
+i.e.$$w_{ij} \stackrel{independent}{\sim} \mathcal{N}(0,\alpha_{ij}^-1) \text{ } \forall i=1,2,...,n;j=1,2,...,k$$
+
+- *Compute Posterior:* For bayesian inference, we need
+$$f(\boldsymbol{W}|\mathbb{X},\boldsymbol{t})= \frac{f(\boldsymbol{t}|\mathbb{X},\boldsymbol{W})\times f(\boldsymbol{W})}{\int f(\boldsymbol{t}|\mathbb{X},\boldsymbol{W})f(\boldsymbol{W}) d\boldsymbol{W}}$$
+But the exact calculation is very difficult, instead Laplace Approximation is used
+
+- *Hyperparameter Tuning:* In practice, $\alpha_{ij}$s are not known to us, we need to tune them to the value that maximizes $f(\boldsymbol{t}|\mathbb{X})={\int f(\boldsymbol{t}|\mathbb{X},\boldsymbol{W})f(\boldsymbol{W}) d\boldsymbol{W}}$
+
+- *Inference & Prediction:* Let based on optimal hyperparameters , our posterior density is $f_{optimal}(\boldsymbol{W}|\mathbb{X},\boldsymbol{t})$ 
+Then we can have the point estimate 
+$$\hat{\boldsymbol{W}}_{MAP}=arg max_{\boldsymbol{W}}[f_{optimal}(\boldsymbol{W}|\mathbb{X},\boldsymbol{t})]$$
+For a new observation $x$ , we can compute posterior predictive distribution
+$$f(t_x|x,\mathbb{X,\boldsymbol{t},\boldsymbol{W}})=\int f({t_x}|x,\boldsymbol{W})f_{optimal}(\boldsymbol{W}|\mathbb{X},\boldsymbol{t}) d\boldsymbol{W}$$
+or, can predict the class as $argmax_j[exp(\hat{w}_j^T\phi(x))]$
+
+- *Kernel Trick:* Take $w_j^{m \times 1}= \sum_{i=1}^n \lambda_{ji} \phi(x_i) = \Phi^T\boldsymbol{\lambda_j} \text{ } \forall j=1,2,...,k$
+Then we have $p_{ij}=\frac{exp(\boldsymbol{\lambda_j}^T\Phi\phi(x_i))}{\sum_{r=1}^k exp(\boldsymbol{\lambda_r}^T\Phi\phi(x_i))}$ , and we can reparametrize the entire model in term of $[\boldsymbol{\lambda_1},\boldsymbol{\lambda_2},...,\boldsymbol{\lambda_k}]^{n \times k}$. Now, 
+$$\Phi^{n \times m} [\phi(x_i)]^{m \times 1} = \begin{bmatrix}  \phi^T(x_{1})\\ \phi^T(x_{2})\\ \vdots \\ \phi^T(x_{n})\end{bmatrix}\phi(x_i)= \begin{bmatrix} k(x_1,x_i) \\ k(x_2,x_i) \\ \vdots \\ k(x_n,x_i)\end{bmatrix} $$
+Notice that , this model access $\mathbb{X}$ only in terms of kernel $k(x_i,x_j)=\phi^T(x_i)\phi(x_j)$, explicit calculation of feature maps is not needed.
+
+
+**NOTE:** Theoretically RVM can handle any number of classes , but computation is so much involved that till date both in **R** & **python** , direct implementation is available for Binary Classification only. Multi-class problems are solved like 'one-vs-one' or 'one-vs-rest' combination of binary classifications.
+
+\newpage
+
+# DATA
+
+The dataset contains details of the purchase of a product based on social network advertisements. The data has 400 observations,  looks as follows ...  
+
+```{r Data}
+Data = read.csv("social.CSV")
+
+Y = Data$Purchased
+target<-function(y) return(factor(y,labels=c("Not Purchased","Purchased")))
+head(Data,10)
+```
+
+*GOAL:*  Predicting whether a person will buy a product displayed on a social network advertisement based on his/her gender , age and approximate Salary. 
+
+\
+
+**EDA** 
+
+* Target class belongs to two discrete categories of purchased and not purchased. [Throughout the report , Red colour will denote 'Not Purchased' , Green colour will denote 'Purcased'] 
+```{r , out.height="30%"}
+
+plotrix::pie3D(c(length(Y)-sum(Y),sum(Y)),labels=c(length(Y)-sum(Y),sum(Y)),col=c("red","green"))
+legend("topright", c("Not Purchased","Purchased"), fill = c("red","green"))
+
+```
+
+
+* *Gender:* Gender does not affect the purchase status much here. Given a person is male, the chance that he will buy the product is very similar to the chance of purchase ,given the person is female .
+```{r, out.width="60%"}
+
+plot((factor(Data$Gender)),target(Y),xlab="Gender",ylab='',main="Gender vs. Purchase status")
+
+```
+
+* *Salary:* Those who purchase the product , have on average higher salary than those who do not.
+
+```{r , out.width="45%" , fig.show='hold'}
+Data$EstimatedSalary->Salary
+hist(Salary)
+plot(target(Y),Salary,xlab='',ylab="Salary",main = "Salary vs. Purchase status" )
+```
+
+* *Age:* Those who purchase the product , are on average older than those who do not. 
+
+```{r , out.width="45%" , fig.show='hold'}
+Data$Age->Age
+hist(Age)
+plot(target(Y),Age,xlab='',ylab="Age",main = "Age vs. Purchase status" )
+```
+
+
+\newpage
+
+# Applying RVM
+
+We will use 80% data for training and 20% leftout data as Test set.
+
+## fitting 
+
+Lets, train a RVM 
+
+
+```{r}
+library(reticulate)
+```
+
+\small
+```{python,echo=T}
+import numpy as np
+import pandas as pd
+from sklearn_rvm import EMRVC
+from sklearn.model_selection import  train_test_split
+from sklearn.preprocessing import StandardScaler
+
+Data = r.Data.iloc[:,1:-1]
+Data = pd.get_dummies(Data,drop_first=1)
+TrainX,TestX,TrainY,TestY = train_test_split(Data,r.Y,train_size=0.8,random_state=101)
+Scale = StandardScaler()
+TrainX.iloc[:,:-1] = Scale.fit_transform(TrainX.iloc[:,:-1])
+TestX.iloc[:,:-1] = Scale.transform(TestX.iloc[:,:-1])
+
+
+Model_lin = EMRVC(kernel='linear',bias_used=True)
+Model_lin.fit(TrainX,TrainY)
+
+```
+\normalsize
+
+We can see , the 'number of relevance vectors' is small compared to total number of observations, as RVM finds out sparse model representation based on a few observations only. Those observations , which have non-null importance , are called 'relevant vectors' (and hence the name RVM)
+
+
+```{r }
+Model_linear = py$Model_lin
+cat("\n")
+cat("Number of relevance vectors:",length(Model_linear$relevance_vectors_))
+cat("\n")
+cat("Dimension of training data: ", dim(py$TrainX))
+
+```
+
+
+Also, Let us train the same model with RBF kernel
+
+\small
+```{python, echo=T}
+Model_rbf = EMRVC(bias_used=True,gamma='scale')
+Model_rbf.fit(TrainX,TrainY)
+
+
+```
+\normalsize
+
+
+```{r}
+Model_rbf = py$Model_rbf
+cat("\n")
+cat("Number of relevance vectors:",length(Model_rbf$relevance_vectors_))
+cat("\n")
+
+```
+
+## performance
+
+Compare the performance on train set & test set, using confusion matrix.
+
+```{r,out.width='40%',fig.show='hold'}
+
+M = table(Model_linear$predict(py$TrainX),py$TrainY) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+accu1 = round(sum(diag(M))/sum(M),3)
+corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+mtext(paste("train | linear | Accuracy : ",accu1),side= 2)
+
+
+M = table(Model_rbf$predict(py$TrainX),py$TrainY) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+accu2 = round(sum(diag(M))/sum(M),3)
+corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+mtext(paste("train | rbf | Accuracy : ",accu2),side= 2)
+
+
+M = table(Model_linear$predict(py$TestX),py$TestY) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+accu3 = round(sum(diag(M))/sum(M),3)
+corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+mtext(paste("test | linear | Accuracy : ",accu3),side= 2)
+
+
+M = table(Model_rbf$predict(py$TestX),py$TestY) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+accu4 = round(sum(diag(M))/sum(M),3)
+corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+mtext(paste("test | rbf | Accuracy : ",accu4),side= 2)
+
+```
+
+Since RBF kernel works with a infinite-dimensional feature-space implicitly, it is giving better fit & prediction than linear kernel.
+
+```{r}
+M = matrix(c(accu1,accu2,accu3,accu4),nrow=2,byrow=T)
+colnames(M) = c("Linear Kernel","RBF Kernel")
+row.names(M) = c("train_set_accuracy","test_set_accuracy")
+data.frame(M)
+```
+
+\newpage
+
+# Comparison with SVM 
+
+We can do the same classification using SVM also.
+
+\small
+```{python,echo=TRUE}
+
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV,RepeatedStratifiedKFold
+
+Model_svm = SVC(kernel='rbf')
+param = {'C':[0.01,0.05,0.1,0.4,0.8,1,2,5]}
+CV = RepeatedStratifiedKFold(n_repeats=5,n_splits=3,random_state=101)
+opt_hyp = (GridSearchCV(Model_svm,param_grid=param, 
+cv=CV,
+refit=False)).fit(TrainX,TrainY)
+
+Model_svm = SVC(C=opt_hyp.best_params_['C'],kernel='rbf').fit(TrainX,TrainY)
+
+```
+\normalsize
+
+```{r,out.width='40%',fig.show='hold'}
+Model_svm = py$Model_svm
+
+print(Model_svm)
+cat("\n")
+cat("Number of support vectors:",Model_svm$n_support_)
+cat("\n")
+accu1 = Model_svm$score(py$TrainX,py$TrainY)
+accu2 = Model_svm$score(py$TestX,py$TestY)
+data.frame(accuracy=c(accu1,accu2),row.names = c('train_set','test_set'))
+
+
+M = table(Model_svm$predict(py$TrainX),py$TrainY) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+mtext(paste("train | Accuracy : ",accu1),side= 2)
+
+
+M = table(Model_svm$predict(py$TestX),py$TestY) 
+row.names(M)=paste("pred.",target(c(0,1)))
+colnames(M)=paste("true",target(c(0,1)))
+corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+mtext(paste("test | Accuracy : ",accu2),side= 2)
+
+
+
+```
+
+
+\newpage
+
+# RVM over SVM
+
+
+
+### Advantages 
+
+- RVM yields sparser model, less number of observations having non-null importance, so performs faster prediction
+
+- It gives 'class posterior probabilities' , while SVM is non probabilistic
+
+- No need for cross-validation of penalty cost hyperparameter
+
+
+
+### Disadvantage
+
+- More computation intensive , so RVM needs more training time
+
+
+
+\newpage 
+
+# Plotting RVM Decision Boundaries
+
+### for Males
+
+```{r, out.width='45%',fig.show='hold'}
+set = py$TrainX 
+set = subset(set,Gender_Male==T)
+X1 = seq(min(set[, 1]), max(set[, 1]), by = 0.05)
+X2 = seq(min(set[, 2]) , max(set[, 2]), by = 0.05)
+grid_set = expand.grid(X1, X2)
+plot_set = py$Scale$inverse_transform(grid_set)
+colnames(plot_set) = colnames(set)[1:2]
+plot_set = data.frame(plot_set)
+grid_set = cbind(grid_set,rep(c(1),dim(grid_set)[1]))
+colnames(grid_set) = colnames(set)
+
+library(ggplot2)
+y_grid = Model_rbf$predict(grid_set)
+ggplot(plot_set, aes(x = Age, y = EstimatedSalary, color = target(y_grid))) +
+  geom_point(size=1) +
+  scale_color_manual(values = c("Not Purchased" = "red", "Purchased" = "green")) +
+  guides(color = guide_legend(override.aes = list(shape = 15, size = 4))) +
+  labs(title = "Decision Boundary | Male",
+       x = "Age",
+       y = "Salary",
+       color="status")
+
+
+y_proba = Model_rbf$predict_proba(grid_set)
+ggplot(plot_set, aes(x = Age, y = EstimatedSalary, color = y_proba[,2])) +
+  geom_point(size=1) +
+  scale_color_gradient(low = "cyan", high = "orange") +
+  labs(title = "predicted posterior probability of Purchase | Male",
+       x = "Age",
+       y = "Salary",
+       color = "probability")
+
+
+```
+
+
+### for Females
+
+```{r, out.width='45%',fig.show='hold'}
+set = py$TrainX 
+set = subset(set,Gender_Male==F)
+X1 = seq(min(set[, 1]), max(set[, 1]), by = 0.05)
+X2 = seq(min(set[, 2]) , max(set[, 2]), by = 0.05)
+grid_set = expand.grid(X1, X2)
+plot_set = py$Scale$inverse_transform(grid_set)
+colnames(plot_set) = colnames(set)[1:2]
+plot_set = data.frame(plot_set)
+grid_set = cbind(grid_set,rep(c(0),dim(grid_set)[1]))
+colnames(grid_set) = colnames(set)
+
+
+y_grid = Model_rbf$predict(grid_set)
+ggplot(plot_set, aes(x = Age, y = EstimatedSalary, color = target(y_grid))) +
+  geom_point(size=1) +
+  scale_color_manual(values = c("Not Purchased" = "red", "Purchased" = "green")) +
+  guides(color = guide_legend(override.aes = list(shape = 15, size = 4))) +
+  labs(title = "Decision Boundary | Female",
+       x = "Age",
+       y = "Salary",
+       color="status")
+
+
+y_proba = Model_rbf$predict_proba(grid_set)
+ggplot(plot_set, aes(x = Age, y = EstimatedSalary, color = y_proba[,2])) +
+  geom_point(size=1) +
+  scale_color_gradient(low = "cyan", high = "orange") +
+  labs(title = "predicted posterior probability of Purchase | Female",
+       x = "Age",
+       y = "Salary",
+       color = "probability")
+
+
+```
+
+
+### CONCLUSION 
+Looking at the nature of decision boundary we have, we can conclude 
+\
+Those with high Salary are likely to purchase a product , irrespective of their Age. But younger persons are unlikely to purchase a product if the Salary is not enough. 

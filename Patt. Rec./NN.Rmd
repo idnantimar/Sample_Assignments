@@ -1,0 +1,280 @@
+---
+title: "Feedforward Neural Network for Classification"
+subtitle: " Assignment - 4 | Pattern Recognition"
+author: "RAMIT NANDI || MD2211"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    df_print: kable
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,
+                      message = F,
+                      warning = F,
+                      fig.align = "center")
+
+
+library(reticulate)
+setwd("G:\\ASSIGNMENTS\\ASSIGNMENTS-PATTERN_RECOGNITION\\FNN")
+data = read.table("G:\\ASSIGNMENTS\\ASSIGNMENTS-PATTERN_RECOGNITION\\RDA\\Egyptian-skulls.txt")
+
+```
+
+\newpage
+
+# INTRODUCTION
+
+A feedforward neural network (FNN) is an artificial neural network, where the information in the model flows in only one direction — from the input nodes, through the hidden nodes (if any) and to the output nodes, without any cycles or loops.
+
+```{r ,out.height="25%",out.width="30%"}
+knitr::include_graphics("fnn.PNG")
+
+```
+
+
+\
+\
+\
+
+# Description 
+
+Here we will create a FNN , having 
+
+* required number of input & output nodes for a dataset
+* two hidden layer with ReLU activation function for non-linearity 
+* softmax activation in output layer for classification problem
+
+\small
+```{python,echo=TRUE}
+import tensorflow as tf
+
+class My_NeuralNetwork(tf.Module):
+    def __init__(self,num_Inputs,num_Outputs,num_nodesHidden=None):
+        # some rule of thumb regarding the width of hidden layer ...
+        if num_nodesHidden is None: 
+          num_nodesHidden = round(2*num_Inputs/3) + num_Outputs
+        # connecting input layer to hidden layer 1...
+        self.W0 = tf.Variable(tf.random.normal([num_Inputs,num_nodesHidden])) 
+        self.b0 = tf.Variable(tf.zeros([num_nodesHidden]))
+        # connecting hidden layers 1 & 2 
+        self.W1 = tf.Variable(tf.random.normal([num_nodesHidden,num_nodesHidden])) 
+        self.b1 = tf.Variable(tf.zeros([num_nodesHidden]))
+        # connecting hidden layer 2 to output layer ...
+        self.W2 = tf.Variable(tf.random.normal([num_nodesHidden,num_Outputs]))  
+        self.b2 = tf.Variable(tf.zeros([num_Outputs]))
+
+    def __call__(self, x):
+        # ReLU activation for the hidden layers ...
+        x = tf.nn.relu(tf.matmul(x, self.W0) + self.b0)  
+        x = tf.nn.relu(tf.matmul(x, self.W1) + self.b1)  
+        # SoftMax activation for the output layer ...
+        return tf.nn.softmax(tf.matmul(x, self.W2) + self.b2)  
+
+```
+\normalsize
+
+\
+\
+\
+
+# DATA 
+
+Here we will use the Egyptian-skull dataset, consists of anthropometric measurements on 90 male Egyptian skulls from three different periods(30 skulls/group). The data looks like - 
+```{r}
+colnames(data) = c("mb","bh","bl","nh","period")
+data$period = factor(data$period,labels = c("4000BC","3300BC","1850BC"),ordered=T)
+
+data[c(1,30:31,60:61,90),]
+```
+```{r,out.width="50%",fig.align='default',fig.show='hold'}
+p1 = subset(data,period=="4000BC",c("mb","bh","bl","nh"))
+p2 = subset(data,period=="3300BC",c("mb","bh","bl","nh"))
+p3 = subset(data,period=="1850BC",c("mb","bh","bl","nh"))
+boxplot(cbind(p1[[1]],p2[[1]],p3[[1]]),names=c("4000BC","3300BC","1850BC"),horizontal=T,col=c("red","green","blue"),xlab="maximum breadth(mm.)")
+
+boxplot(cbind(p1[[2]],p2[[2]],p3[[2]]),names=c("4000BC","3300BC","1850BC"),horizontal=T,col=c("red","green","blue"),xlab="basibregmatic height(mm.)")
+```
+```{r,out.width="50%",fig.align='default',fig.show='hold'}
+boxplot(cbind(p1[[3]],p2[[3]],p3[[3]]),names=c("4000BC","3300BC","1850BC"),horizontal=T,col=c("red","green","blue"),xlab="basialveolar length(mm.)")
+
+boxplot(cbind(p1[[4]],p2[[4]],p3[[4]]),names=c("4000BC","3300BC","1850BC"),horizontal=T,col=c("red","green","blue"),xlab="nasal height(mm.)")
+
+```
+
+We have already seen earlier that, due to the overlapping nature of the data, it is very hard to classify them using methods like- LDA, QDA, RDA, SVM, Logistic Regression etc.
+Lets try Neural Network here.  
+
+\
+\
+\
+
+# Fitting the Model 
+
+```{python}
+import numpy as np
+import pandas as pd
+X_data = r.data
+y_data = X_data.pop('period')
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+Scaler = StandardScaler()
+LE = LabelEncoder()
+X_data = Scaler.fit_transform(X_data)
+X_data = X_data.astype('float32')
+y_data = LE.fit_transform(y_data)
+
+```
+
+We will split the data in 3-folds ,
+
+* Based on 2-folds of data the Neural Network will be fitted by minimizing 'categorical crossentropy loss' i.e. maximizing the multinomial log-likelihood.
+* To prevent overfitting we add L2 penalty
+* The loss function will be evaluated on the remaining holdout fold of the data also, to get idea about the performance on new data.
+
+Then we will repeat the entire process 3-times , finally we will compute the average accuracy.
+
+\small
+```{python, echo = TRUE}
+from sklearn.model_selection import RepeatedStratifiedKFold
+from sklearn.metrics import accuracy_score
+
+folds = RepeatedStratifiedKFold(n_repeats=3,n_splits=5,random_state=101)
+folds = list(folds.split(X_data,y_data))
+
+def fit_FNN(MODEL,
+            X_train,y_train,X_validation,y_validation,
+            lr=0.01,num_epochs=100,L2_lambda=0.01):
+    optimizer = tf.optimizers.Adam(learning_rate=lr)
+    def total_loss(X,y):
+        loss_type = tf.losses.SparseCategoricalCrossentropy(from_logits=False)
+        y_hat = MODEL(X)
+        L2W0 = tf.reduce_sum(tf.square(MODEL.W0))
+        L2W1 = tf.reduce_sum(tf.square(MODEL.W1))
+        L2W2 = tf.reduce_sum(tf.square(MODEL.W2))
+        penaltyL2 = L2_lambda*(L2W0+L2W1+L2W2)
+        return loss_type(y,y_hat) + penaltyL2
+    loss_train = []
+    loss_validation = []
+    
+    # training loop .... 
+    for epoch in range(num_epochs):
+        with tf.GradientTape() as tape: loss = total_loss(X_train,y_train)
+        loss_train += [loss.numpy()]
+        loss_validation += [(total_loss(X_validation,y_validation)).numpy()]
+        gradients = tape.gradient(loss, MODEL.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, MODEL.trainable_variables))
+    loss_train += [(total_loss(X_train,y_train)).numpy()]
+    loss_validation += [(total_loss(X_validation,y_validation)).numpy()]
+
+    # accuracy scores ....
+    y_train_hat = np.argmax(MODEL(X_train).numpy(),axis=1)
+    train_accuracy = accuracy_score(y_train,y_train_hat)
+    y_validation_hat = np.argmax(MODEL(X_validation).numpy(),axis=1)
+    validation_accuracy = accuracy_score(y_validation,y_validation_hat)
+  
+    
+    return {"loss_train_history": np.array(loss_train),
+            "loss_validation_history": np.array(loss_validation),
+            "train_accuracy": train_accuracy,
+            "validation_accuracy": validation_accuracy}
+
+```
+\normalsize
+
+## case: default number of nodes in hidden layer
+Start with the case , where we have default number of nodes in the hidden layer.
+
+```{python}
+num_Inputs = X_data.shape[1]
+num_Outputs = len(np.unique(y_data))
+num_nodesHidden = round(2*num_Inputs/3) + num_Outputs
+print(f"Number of nodes: input= {num_Inputs} | output= {num_Outputs} | hidden= {num_nodesHidden}")
+
+```
+\small
+```{python,echo=TRUE}
+accu_train = []
+accu_validation = []
+
+for ix_train,ix_validation in folds:
+    current_Model = My_NeuralNetwork(num_Inputs,num_Outputs)
+    OUT = fit_FNN(current_Model,
+                  X_data[ix_train],y_data[ix_train],
+                  X_data[ix_validation],y_data[ix_validation],
+                  num_epochs=250,L2_lambda=0.095)
+    accu_train += [OUT["train_accuracy"]]             
+    accu_validation += [OUT["validation_accuracy"]]             
+    
+
+```
+\normalsize
+
+```{python}
+history = pd.DataFrame({key: OUT[key] for key in ["loss_train_history","loss_validation_history"]}) 
+accu = pd.DataFrame({"train_accuracy":accu_train ,"validation_accuracy":accu_validation})
+
+accu_train_default = np.median(accu_train)
+accu_validation_default = np.median(accu_validation)
+
+```
+```{r,out.width="45%",fig.show='hold'}
+history = py$history
+accu = py$accu
+
+data <- data.frame(x = (-1 + 1:dim(history)[1]), 
+                   y = c(history[[1]],history[[2]]), 
+                   group = factor(rep(c("train","validation"), each = dim(history)[1])))
+lattice::xyplot(y ~ x, data = data, type = "l",lwd=1.5, groups = group,col=c('blue','red'), 
+       key = list(space="top",lines=list(col=c('blue','red')),text=list(c("train","validation"))),
+       xlab = "iteratons", ylab = "loss",
+       main = "tracking the loss function")
+
+barplot(as.matrix(t(accu)),beside=T,legend.text = T,xlab = "repetitions",ylab="accuracy",main=paste("#nodes in hidden layer: ", py$num_nodesHidden))
+
+```
+
+
+
+## optimum model
+
+We will try with some different number of nodes in hidden layers , and try to choose the one that gives maximum accuracy on average , for validation set.
+
+```{python}
+train_score = []
+val_score = []
+for n_hid in [3,9,12,15,18,21]:
+    accu_train = []
+    accu_validation = []
+    for ix_train,ix_validation in folds:
+        current_Model = My_NeuralNetwork(num_Inputs,num_Outputs,n_hid)
+        OUT = fit_FNN(current_Model,
+                  X_data[ix_train],y_data[ix_train],
+                  X_data[ix_validation],y_data[ix_validation],
+                  num_epochs=250,L2_lambda=0.095)
+        accu_train += [OUT["train_accuracy"]]             
+        accu_validation += [OUT["validation_accuracy"]]
+    train_score += [np.median(accu_train)]
+    val_score += [np.median(accu_validation)]
+train_score.insert(2,accu_train_default) 
+val_score.insert(2,accu_validation_default)
+train_score = np.array(train_score)
+val_score = np.array(val_score)
+```
+```{r, out.width="45%"}
+data <- data.frame(x = c(3,6,9,12,15,18,21), 
+                   y = c(py$train_score,py$val_score), 
+                   group = factor(rep(c("train","validation"), each = 7)))
+lattice::xyplot(y ~ x, data = data, type = "b",lwd=1.5, groups = group,col=c('blue','red'), 
+       key = list(space="top",lines=list(col=c('blue','red')),text=list(c("train","validation"))),
+       xlab = "nodes/hidden layer", ylab = "accuracy",
+       main = " ",ylim=c(0,0.6))
+```
+
+But don't see very much improvement there.
+
+# Conclusion: 
+
+This dataset is hard to classify for its overlapping nature.

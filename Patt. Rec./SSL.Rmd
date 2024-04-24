@@ -1,0 +1,615 @@
+---
+title: "Effectiveness of Social Media Ads."
+subtitle: "SEMI-SUPERVISED LEARNING (SSL) | Assignment - 2 | Pattern Recognition"
+author: "RAMIT NANDI || MD2211"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    df_print: kable
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,
+                      message = F,
+                      warning = F,
+                      fig.align = "center")
+
+
+####libs------------------------------------------
+library(latticeExtra)
+library(gridExtra)
+library(foreach)
+library(parallel)
+library(dplyr)
+library(e1071)
+library(corrplot)
+
+
+#### working directory ---------------------------
+setwd("G:\\ASSIGNMENTS\\ASSIGNMENTS-PATTERN_RECOGNITION\\Semi-Supervised Learning")
+
+```
+
+
+
+\newpage 
+
+# INTRODUCTION 
+
+Currently , Machine Learning algorithms are broadly classified in two categories , both having their own pros & cons -
+
+- **Supervised Learning :** It needs labeled data, and updates model weights to minimize the average difference between predictions and labels.
+\
+However, labeling an entire dataset may be time-consuming and expensive, and without enough labeled data it fails to reach desired quality.
+
+- **Unsupervised Learning :** It does not need labeling, but tries to cluster points together based on similarities in some feature-space. 
+\
+But, without labels to guide training, this algorithm may find clusters which are not relevant at all. 
+
+
+What if we have access to both types of data? Or what if we only want to label a percentage of our dataset? How can we combine both our labeled and unlabeled datasets to improve model performance? This is where *Semi-Supervised Learning* appears as a hybrid solution.
+
+```{r ,out.width="70%" }
+knitr::include_graphics("intro.PNG")
+```
+
+## Underlying Assumptions : 
+
+i). *Continuity assumption* : Points which are close to each other are more likely to share a label.
+
+ii). *Cluster assumption* : The data tend to form discrete clusters, and points in the same cluster are more likely to share a label.
+
+iii). *Manifold assumption* : The data lie approximately on a manifold of much lower dimension than the input space.
+
+\
+
+In the semi-supervised setting, we use both labeled(usually a small proportion of entire dataset) and unlabeled data(remaining larger portion of dataset). 
+
+- Labeled points act as a sanity check; they add structure to the learning problem by establishing how many classes there are, and which clusters correspond to which class.
+
+- Unlabeled datapoints provide context; by exposing our model to as much data as possible, we can accurately estimate the shape of the whole distribution.
+
+With both parts, semi-supervised learning can step closer to the true distribution compared to applying supervised or unsupervised learning separately.
+
+
+\newpage 
+
+# DATA DESCRIPTION 
+
+The dataset contains details of the purchase of a product based on social network advertisements. The data has 400 observations,  looks as follows ...  
+
+```{r Data}
+Data = read.csv("social.CSV")
+Y = Data$Purchased
+target<-function(y) return(factor(y,labels=c("Not Purchased","Purchased")))
+head(Data,10)
+```
+
+*GOAL:*  Predicting whether a person will buy a product displayed on a social network advertisement based on his/her gender , age and approximate Salary. 
+
+\
+
+**EDA** 
+
+* Target class belongs to two discrete categories of purchased and not purchased. [Throughout the report , Red colour will denote 'Not Purchased' , Green colour will denote 'Purcased'] 
+```{r , out.height="30%"}
+
+plotrix::pie3D(c(length(Y)-sum(Y),sum(Y)),labels=c(length(Y)-sum(Y),sum(Y)),col=c("red","green"))
+legend("topright", c("Not Purchased","Purchased"), fill = c("red","green"))
+
+```
+
+
+* *Gender:* Gender does not affect the purchase status much here. Given a person is male, the chance that he will buy the product is very similar to the chance of purchase ,given the person is female .
+```{r, out.width="60%"}
+
+plot((factor(Data$Gender)),target(Y),xlab="Gender",ylab='',main="Gender vs. Purchase status")
+
+```
+
+* *Salary:* Those who purchase the product , have on average higher salary than those who do not.
+
+```{r , out.width="45%" , fig.show='hold'}
+Data$EstimatedSalary->Salary
+hist(Salary)
+plot(target(Y),Salary,xlab='',ylab="Salary",main = "Salary vs. Purchase status" )
+```
+
+* *Age:* Those who purchase the product , are on average older than those who do not. 
+
+```{r , out.width="45%" , fig.show='hold'}
+Data$Age->Age
+hist(Age)
+plot(target(Y),Age,xlab='',ylab="Age",main = "Age vs. Purchase status" )
+```
+\newpage
+# PREPARING Labeled & Unlabeled DATA for SSL
+
+* First we will keep aside 20% data as our Final Test Set. This split will not change throughout the discussion.
+* Everything will be done on the rest 80% data (i.e. 320obs.) from now on.
+
+```{r}
+set.seed(101)
+ix = caTools::sample.split(Y,0.8)
+TRAIN = subset(Data,ix==T)
+TEST = subset(Data,ix==F)
+
+```
+
+
+Here our data is such that labels are available for all observation. But to demonstrate how semi-Supervised learning works, we need both labeled & unlabeled data. 
+\
+So we will split the data in 10folds, deliberately treat 6 out of 10folds in Training Set as 'Unlabeled Data' [That is simply, choose 6/10 portion of training data , delete the label column and pretend like it was not there in the first place. This split will not change throughout the discussion.] .
+\
+From 4folds with labels , we will use 2folds as 'Labeled Training Data' and remaining 2folds as 'Validation Data' for various demonstration.  
+```{r kFOLD}
+source("G:\\ASSIGNMENTS\\equal_Kfolds.R")
+
+k = 10
+u = 6
+v = 2
+FOLDs = equal_Kfolds(TRAIN,k)
+```
+
+
+\newpage 
+# Semi-SUPERVISED LEARNING
+
+## Illustration for a particular split of folds
+```{r CHOOSING_FOLDS}
+cat(c("Total number of observations :", dim(TRAIN)[1]))
+cat(c("All possible folds index of Training Data : ", paste(1:k, sep=' ')))
+
+allUL = combs(1:k,u)
+ixUL = allUL[sample(choose(k,u),1),] # this will not change anywhere from now
+Unlabeled = foreach(x = FOLDs[ixUL] , .combine= rbind) %do% x[-c(1,5)]
+
+ixLab = setdiff(1:k,ixUL) # this will not change anywhere from now
+cat(c("   index for folds containing Labels [fixed] : ", paste(ixLab, sep=' ')))
+allV = combs(ixLab,v) 
+ixV = allV[sample(choose(length(ixLab),v),1),] # this will be change on another iteration
+Validation = foreach(x = FOLDs[ixV] , .combine= rbind) %do% x[-1]
+Validation$Purchased = target(Validation$Purchased)
+cat(c("        index for Validation folds [changable] : ", paste(ixV, sep=' ')))
+ixL = setdiff(ixLab,ixV) # this will be change on another iteration
+Labeled = foreach(x = FOLDs[ixL] , .combine= rbind) %do% x[-1]
+cat(c("        index for Labeled Training folds [changable] : ", paste(ixL, sep=' ')))
+Labeled$Purchased = target(Labeled$Purchased)
+
+
+cat(c("   index for Unlabeled folds [fixed] : ", paste(ixUL, sep=' ')))
+
+```
+We will discuss the simplest of Semi-Supervised Learning Methods , known as 'self-training' [Other available methods are 'co-training','label propagation' etc]
+
+
+### step-1) Supervised Learning on Labeled Data 
+
+Based on the Labeled Training data , we will apply SVM with cubic polynomial kernel. (Cost hyperparameter $C$ is chosen by crossvalidation, larger the value smaller the margin) 
+
+```{r SL, results='hide'}
+source("G:\\ASSIGNMENTS\\stepwiseGrid.R")
+Grid = list(c(0.01,0.5,1,5,10,20)) # C hyperparameter
+
+
+SLfull = function(Hyp){
+  Model = e1071::svm(Purchased ~.-Purchased,data=Labeled,cost=Hyp, kernel="polynomial",coef0 = 1)
+  return((predict(Model,Validation)==Validation$Purchased) %>% sum) # for fixed sample size , this is proportional to accuracy
+  
+}
+SL = function(Hyp){
+  Model = e1071::svm(Purchased ~.-Purchased-Gender,data=Labeled, cost=Hyp,kernel="polynomial",coef0 = 1) # model after removing gender
+  return((predict(Model,Validation)==Validation$Purchased) %>% sum) 
+  
+}
+
+
+
+
+Hyp = (stepwiseGrid(SLfull,Grid,minimize = F,plotting = F,updateMesh = 5,update = 1))$optimumHypereparameter
+Model1 = svm(Purchased ~.-Purchased,data=Labeled,cost=Hyp,kernel="polynomial",coef0 = 1)
+Hyp = (stepwiseGrid(SL,Grid,minimize = F,plotting = F,updateMesh = 5,update = 1))$optimumHypereparameter
+Model2 = svm(Purchased ~.-Purchased-Gender,data=Labeled,cost=Hyp,kernel="polynomial",coef0 = 1)
+current_hyp = Hyp
+
+```
+
+```{r , out.width='45%',fig.show='hold'}
+Y = Labeled$Purchased
+M1 = table(Model1$fitted,Y) 
+row.names(M1)=paste("pred.",row.names(M1))
+colnames(M1)=paste("true",colnames(M1))
+corrplot(M1,is.corr = F,col.lim = c(0,sum(M1)),method="color",addCoef.col = T)
+mtext("With Gender",side=2)
+
+M2 = table(Model2$fitted,Y) 
+row.names(M2)=paste("pred.",row.names(M2))
+colnames(M2)=paste("true",colnames(M2))
+corrplot(M2,is.corr = F,col.lim = c(0,sum(M1)),method="color",addCoef.col = T)
+mtext("Without Gender",side=2)
+
+
+```
+
+
+Also , We dont see very much difference in quality after dropping the feature 'Gender'. So from now on , SVM will be fitted on Age & Salary only , for simpler model.
+
+
+
+
+```{r SVM_BOUNDARY , out.width="70%"}
+SLmodel = Model2
+Y = Labeled$Purchased
+set = Labeled[2:3] # Age and Salary
+X1 = seq(min(set[, 1]) - 1, max(set[, 1]) + 1, by = 0.5)
+X2 = seq(min(set[, 2]) - 1, max(set[, 2]) + 1, by = 500)
+grid_set = expand.grid(X1, X2)
+grid_set = cbind(vector(length = dim(grid_set)[1]),grid_set,vector(length = dim(grid_set)[1])) # since data is fitted on a dataframe of 4columns , though except Age & Salary other columns have no role
+colnames(grid_set) = colnames(Labeled)
+y_grid = predict(SLmodel, grid_set)
+plot(set,
+     main = paste('SVM on Labeled Training data || accuracy = ',mean(SLmodel$fitted==Y) %>% round(3)),
+     xlab = 'Age', ylab = 'Salary',col=ifelse(Y == "Purchased", 'green', 'red'),pch=20,cex=2)
+points(grid_set[2:3], pch = '.', col = ifelse(y_grid == "Not Purchased", 'coral1', 'aquamarine'))
+gridSL = grid_set
+y_gridSL = y_grid
+
+```
+
+
+### step-2) Pseudo-Labeling of Unlabeled data
+
+Based on our SVM model fitted above , try to classify the Unlabeled observations. These predicted labels will be used as the labels of the Unlabeled data.
+```{r PSEUDO-LABELING , out.width="70%"}
+
+currentData = cbind(Unlabeled,vector(length = dim(Unlabeled)[1])) # since data is fitted on a dataframe of 4columns , though except Age & Salary other columns have no role
+colnames(currentData) = colnames(Labeled)
+pseudoY = predict(SLmodel,currentData)
+
+plot(currentData[2:3],
+     main = "Classification of Unlabeled Data",
+     xlab = 'Age', ylab = 'Salary',col=ifelse(pseudoY == "Purchased", 'green', 'red'),pch=20,cex=2)
+points(gridSL[2:3], pch = '.', col = ifelse(y_grid == "Not Purchased", 'coral1', 'aquamarine'))
+
+```
+
+
+### step-3) Updating the Model based on Combined data
+
+Pool the pseudo-Labeled & true Labeled Training data together. Refit the SVM based on this pooled data.
+
+```{r POOLED_MODEL, results='hide'}
+currentData$Purchased = pseudoY
+pooledData = rbind(Labeled,currentData)
+Y = pooledData$Purchased
+
+
+MODEL = function(Hyp){
+  Model = e1071::svm(Purchased ~.-Purchased-Gender,data=pooledData, cost=Hyp,kernel="polynomial",coef0 = 1) 
+  return((predict(Model,Validation)==Validation$Purchased) %>% sum) 
+  
+}
+
+
+Hyp = (stepwiseGrid(MODEL,Grid,minimize = F,plotting = F,updateMesh = 5,update = 1))$optimumHypereparameter
+MODEL = svm(Purchased ~.-Purchased-Gender,data=pooledData, cost=Hyp,kernel="polynomial",coef0=1)
+currentHyp = Hyp
+
+```
+
+```{r ,out.width="70%" }
+knitr::include_graphics("procedure.PNG")
+```
+
+
+
+Now, predict the validation set based on this pooled model. The confusion matrix is given by ,
+```{r, out.width="60%"}
+M = table(predict(MODEL,Validation),Validation$Purchased) 
+row.names(M)=paste("pred.",row.names(M))
+colnames(M)=paste("true",colnames(M))
+accu = round(sum(diag(M))/sum(M),3)
+corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+mtext(paste("Validation set | Accuracy : ",accu),side= 2)
+
+```
+
+
+
+### step-4) Further Refittings 
+
+* We can predict the labels of our Unlabeled data based on our current model. 
+* Use these predictions as the updated pseudo-labels and refit the model based on updated pooled data. 
+* Also predict the validation set based on this updated model.
+
+```{r ,out.width="40%",fig.show='hold'}
+accuOld = accu
+tolerence = 0.01
+currentData = cbind(Unlabeled,vector(length = dim(Unlabeled)[1]))
+colnames(currentData) = colnames(Labeled)
+for(i in 1:20){
+  pseudoY = predict(MODEL,currentData) # predicting labels of unlabeled data
+  currentData$Purchased = pseudoY # updating unlabeled data
+  pooledData = rbind(Labeled,currentData) 
+
+  MODEL = svm(Purchased ~.-Purchased-Gender,data=pooledData, cost=Hyp,kernel="polynomial",coef0=1) # updating the model
+  M = table(predict(MODEL,Validation),Validation$Purchased) 
+  row.names(M)=paste("pred.",row.names(M))
+  colnames(M)=paste("true",colnames(M))
+  accu = round(sum(diag(M))/sum(M),3)
+  corrplot(M,is.corr = F,col.lim = c(0,sum(M)),method="color",addCoef.col = T)
+  mtext(paste("Update",i,"Accuracy : ",accu),side= 2) 
+  
+  if(abs(accuOld-accu)<=tolerence) break
+  
+  accuOld = accu
+  
+}
+
+
+
+```
+
+We can iterate the process upto some convergence.
+
+
+\
+\
+
+
+
+
+### COMPARISON 
+
+First, let evaluate the most updated model performance on our validation set.
+
+```{r SSL_PERFORMANCE , out.width="70%"}
+accuSSL = mean(predict(MODEL,Validation)==Validation$Purchased)
+
+set = pooledData[2:3] 
+X1 = seq(min(set[, 1]) - 1, max(set[, 1]) + 1, by = 0.5)
+X2 = seq(min(set[, 2]) - 1, max(set[, 2]) + 1, by = 500)
+grid_set = expand.grid(X1, X2)
+grid_set = cbind(vector(length = dim(grid_set)[1]),grid_set,vector(length = dim(grid_set)[1]))
+colnames(grid_set) = colnames(Labeled)
+y_grid = predict(MODEL, grid_set)
+plot(Validation[2:3],
+     main = paste('Validation Set performance || Semi-Supervised | accuracy = ',accuSSL %>% round(3)),
+     xlab = 'Age', ylab = 'Salary',col=ifelse( Validation$Purchased== "Purchased", 'green', 'red'),pch=20,cex=2)
+points(grid_set[2:3], pch = '.', col = ifelse(y_grid == "Not Purchased", 'coral1', 'aquamarine'))
+
+```
+
+* **SUPERVISED LEARNING Only:** We already have fitted SVM based on Labeled Training data alone. This is the maximum possible scope for supervisd learning in this dataset. 
+\
+Lets check its performance on Validation set.
+
+
+```{r SL_PERFORMANCE , out.width= "70%"}
+accuSL = mean(predict(SLmodel,Validation)==Validation$Purchased)
+
+plot(Validation[2:3],
+     main = paste('Validation Set performance || Supervised | accuracy = ',accuSL %>% round(3)),
+     xlab = 'Age', ylab = 'Salary',col=ifelse( Validation$Purchased == "Purchased", 'green', 'red'),pch=20,cex=2)
+points(gridSL[2:3], pch = '.', col = ifelse(y_gridSL == "Not Purchased", 'coral1', 'aquamarine'))
+
+
+```
+
+*Comment:* Atleast on this data , the performance is comparable.
+
+\
+
+
+* **UNSUPERVISED LEARNING Only:** We can ignore the labels of Labeled Training data and combine it with the Unlabeled data. As we saw earlier , Gender is not important, we will ignore that column.
+\
+-Apply Hierarchial Clustering on the data [distance: euclidean, agglomeration: complete]. Now consider the two top-most groups. 
+\
+-Apply kNN algorithm[k: odd number $\ge \sqrt{\text{sample size}}$] to classify the validation set in those two groups identified by clustering.
+
+```{r USL , out.width="45%",fig.show='hold'}
+pooledData = rbind(Labeled[-c(1,4)],Unlabeled[-1])
+dist_mat = dist(scale(pooledData), method = 'euclidean')
+Hclust = hclust(dist_mat)
+dendextend::color_branches(as.dendrogram(Hclust),k=2,col=c("blue","darkgrey")) %>% plot(main="Dendogram of the Pooled Data")
+groups = cutree(Hclust,k=2) %>% factor(labels = rev(c("blue","grey")))
+
+Y = Validation$Purchased
+num_neighbour = sqrt(dim(pooledData)[1])
+num_neighbour = num_neighbour + 1 - (num_neighbour %%2)
+predY = class::knn(pooledData,Validation[2:3],groups,k=num_neighbour)
+table(Y,predY) %>% corrplot(is.corr = F,col.lim = c(0,length(Y)),method="color",addCoef.col = T)
+mtext("Validation Set",side= 2)
+
+
+```
+
+```{r USL_PERFORMANCE , out.width="70%" }
+set = pooledData # Age and Salary
+X1 = seq(min(set[, 1]) - 1, max(set[, 1]) + 1, by = 0.5)
+X2 = seq(min(set[, 2]) - 1, max(set[, 2]) + 1, by = 500)
+grid_set = expand.grid(X1, X2)
+colnames(grid_set) = colnames(pooledData)
+y_grid = class::knn(pooledData,grid_set,groups,k=num_neighbour)
+plot(Validation[2:3],
+     main = "Validation Set performance || Unsupervised ",
+     xlab = 'Age', ylab = 'Salary',col=ifelse( Y == "Purchased", 'green', 'red'),pch=20,cex=2)
+points(grid_set, pch = '.', col = ifelse(y_grid == "blue", 'blue', 'grey'))
+
+```
+
+*Comment:* Though the persons who do not purchase are mostly classified as grey group , but there is no way to say that the decision boundary is actually for 'Purchased vs Not Purchased' classification. 
+
+
+\
+
+
+## Repeating the calculations for different choices of folds
+
+Till now we were using -
+```{r}
+cat(c("All possible folds index of Training Data : ", paste(1:k, sep=' ')))
+cat(c("   index for folds containing Labels [fixed] : ", paste(ixLab, sep=' ')))
+cat(c("        index for Validation folds [changable] : ", paste(ixV, sep=' ')))
+cat(c("        index for Labeled Training folds [changable] : ", paste(ixL, sep=' ')))
+cat(c("   index for Unlabeled folds [fixed] : ", paste(ixUL, sep=' ')))
+
+```
+
+Now, we will randomly choose some different indexes of folds as Validation Set & Labeled Training Set and will repeat all the steps again to have an idea of average performance. [To obtain semi-supervised learning we need supervised learning in the intermediate step. So that performances are also reported.]
+
+
+```{r REPETATIONS , results='hide'}
+Unlabeled = foreach(x = FOLDs[ixUL] , .combine= rbind) %do% x[-c(1,5)]
+allV = anti_join(data.frame(allV),data.frame(t(ixV)))
+currentAccu = c(Semi_Supervised=accuSSL,Supervised=accuSL)
+currentixV = ixV
+HYP = vector()
+hyp = vector()
+ACCU = 
+foreach(itr=1:(dim(allV)[1]),.combine = cbind) %do% {
+
+  ixV = allV[itr,] %>% as.numeric()
+  Validation = foreach(x = FOLDs[ixV] , .combine= rbind) %do% x[-1]
+  Validation$Purchased = target(Validation$Purchased)
+  ixL = setdiff(ixLab,ixV)
+  Labeled = foreach(x = FOLDs[ixL] , .combine= rbind) %do% x[-1]
+  Labeled$Purchased = target(Labeled$Purchased)
+
+  Y = Labeled$Purchased
+  SL = function(Hyp){
+    Model = e1071::svm(Purchased ~.-Purchased-Gender,data=Labeled, cost=Hyp,kernel="polynomial",coef0=1) 
+    return((predict(Model,Validation)==Validation$Purchased) %>% sum) 
+  }
+  Hyp = (stepwiseGrid(SL,Grid,minimize = F,plotting = F,updateMesh = 5,update = 1))$optimumHypereparameter
+  SLmodel = svm(Purchased ~.-Purchased-Gender,data=Labeled,cost=Hyp,kernel="polynomial",coef0=1)
+  accuSL = mean(predict(SLmodel,Validation)==Validation$Purchased)
+  hyp[itr] = Hyp
+  
+  currentData = cbind(Unlabeled,vector(length = dim(Unlabeled)[1]))
+  colnames(currentData) = colnames(Labeled)
+  pseudoY = predict(SLmodel,currentData)
+  currentData$Purchased = pseudoY
+  pooledData = rbind(Labeled,currentData)
+  Y = pooledData$Purchased
+  MODEL = function(Hyp){
+    Model = e1071::svm(Purchased ~.-Purchased-Gender,data=Labeled, cost=Hyp,kernel="polynomial",coef0=1) 
+    return((predict(Model,Validation)==Validation$Purchased) %>% sum) 
+  }
+  Hyp = (stepwiseGrid(MODEL,Grid,minimize = F,plotting = F,updateMesh = 5,update = 1))$optimumHypereparameter
+  MODEL = svm(Purchased ~.-Purchased-Gender,data=pooledData, cost=Hyp,kernel="polynomial",coef0=1)
+  HYP[itr] = Hyp
+  accuOld = mean(predict(MODEL,Validation)==Validation$Purchased)
+  for(i in 1:10){
+    pseudoY = predict(MODEL,currentData)
+    currentData$Purchased = pseudoY
+    pooledData = rbind(Labeled,currentData)
+    MODEL = svm(Purchased ~.-Purchased-Gender,data=pooledData, cost=Hyp,kernel="polynomial",coef0=1)
+    accu = mean(predict(MODEL,Validation)==Validation$Purchased)
+    if(abs(accuOld-accu)<=tolerence) break
+    accuOld = accu
+  }
+  accuSSL = mean(predict(MODEL,Validation)==Validation$Purchased)
+
+  c(Semi_Supervised=accuSSL,Supervised=accuSL) # gives the validation set accuracy for Supervised & Semi-Supervised Learning
+  
+}
+
+
+
+```
+
+```{r , out.width="70%"}
+allV = rbind(allV,currentixV)
+val = foreach(a=allV[1],b=allV[2],.combine = list) %do% paste0(a,',',b)
+ACCU = cbind(ACCU,currentAccu)
+
+barplot(ACCU,beside = T,ylab = "accuracy",main="Validation Set Performance",names.arg = val, xlab = "Validation folds index", col=c("orange","darkgrey"))
+legend("bottom" , legend = row.names(ACCU), fill=c("orange","darkgrey"))
+
+```
+
+
+\newpage 
+
+# FINAL MODEL 
+
+## Trained Model 
+
+Our Final Model trained on all 320obs. , using 4folds of Labeled data & 6folds of Unlabeled data and using average value of $C$ hyperparameter from earlier calculations is given as 
+```{r FINAL_MODEL, results='hide'}
+{
+  Labeled = foreach(x = FOLDs[ixLab] , .combine= rbind) %do% x[-1]
+  Y = target(Labeled$Purchased)
+  Labeled$Purchased = Y
+  ix = caTools::sample.split(Y,0.7)
+  Labeled1 = subset(Labeled,ix==T)
+  Labeled2 = subset(Labeled,ix==F)
+  Hyp = mean(c(hyp,current_hyp))
+  SLmodel = svm(Purchased ~.-Purchased-Gender,data=Labeled1,cost=Hyp,kernel="polynomial",coef0=1)
+  currentData = cbind(Unlabeled,vector(length = dim(Unlabeled)[1]))
+  colnames(currentData) = colnames(Labeled)
+  pseudoY = predict(SLmodel,currentData)
+  currentData$Purchased = pseudoY
+  pooledData = rbind(Labeled1,currentData)
+  Hyp = mean(c(HYP,currentHyp))
+  MODEL = svm(Purchased ~.-Purchased-Gender,data=pooledData, cost=Hyp,kernel="polynomial",coef0=1)
+  accuOld = mean(predict(MODEL,Labeled2)==Labeled2$Purchased)
+  for(i in 1:20){
+    pseudoY = predict(MODEL,currentData)
+    currentData$Purchased = pseudoY
+    pooledData = rbind(Labeled1,currentData)
+    Y = pooledData$Purchased
+    MODEL = svm(Purchased ~.-Purchased-Gender,data=pooledData, cost=Hyp,kernel="polynomial",coef0=1)
+    accu = mean(predict(MODEL,Labeled2)==Labeled2$Purchased)
+    if(abs(accuOld-accu)<=tolerence) break
+    accuOld = accu
+  }
+}
+  
+```
+```{r}
+summary(MODEL)
+```
+
+Note that number of Support Vector is much smaller than number of observations , which implies sparse model. 
+```{r}
+cat(c("num. of SV :",MODEL$nSV, " || num. of total obs. in use :", dim(TRAIN)[1]))
+```
+
+
+
+
+## Decision Boundary and Test Set Prediction
+
+```{r , out.width="70%"}
+set = pooledData[2:3] 
+X1 = seq(min(set[, 1]) - 1, max(set[, 1]) + 1, by = 0.5)
+X2 = seq(min(set[, 2]) - 1, max(set[, 2]) + 1, by = 500)
+grid_set = expand.grid(X1, X2)
+grid_set = cbind(vector(length = dim(grid_set)[1]),grid_set,vector(length = dim(grid_set)[1]))
+colnames(grid_set) = colnames(Labeled)
+y_grid = predict(MODEL,grid_set)
+plot(set,
+     main = paste("TRAIN SET | accuracy :",round(mean(MODEL$fitted==Y),3)),
+     xlab = 'Age', ylab = 'Salary',col=ifelse( Y == "Purchased", 'green', 'red'),pch=20,cex=2)
+points(grid_set[2:3], pch = '.', col = ifelse(y_grid == "Purchased", 'green', 'red'))
+
+cat("\n")
+
+plot(TEST[3:4],
+     main = "TEST SET | prediction ",
+     xlab = 'Age', ylab = 'Salary',col=ifelse( predict(MODEL,TEST) == "Purchased", 'green', 'red'),pch=20,cex=2)
+points(grid_set[2:3], pch = '.', col = ifelse(y_grid == "Purchased", 'green', 'red'))
+
+
+```
+
+## CONCLUSION 
+Looking at the nature of decision boundary we have, we can conclude 
+\
+Those with high Salary are likely to purchase a product , irrespective of their Age. But younger persons are unlikely to purchase a product if the Salary is not enough. 
+
