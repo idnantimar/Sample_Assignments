@@ -1,0 +1,248 @@
+---
+title: '**Assignment: Theory of Games and Statistical Decisions**'
+author: "**RAMIT NANDI (MD2211)**"
+date: "18th April 2024"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+header-includes:
+    - \usepackage{setspace}
+fontsize: 12pt
+---
+
+
+
+\begin{center}
+\textbf{m=1} for all problems. 
+\end{center}
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+\newpage
+
+#    Problem 1. 
+
+The matrix game $A$ is given by:
+
+```{r,echo=T}
+m = 1
+(A = rbind(c(10+m,5+m,0,0),
+          c(5+m,10+m,5+m,0),
+          c(0,5+m,10+m,5+m),
+          c(0,0,5+m,10+m)))
+
+```
+
+
+We have to find $v(A)$, the value of the above matrix game $A$ in mixed extensions. 
+
+Let $A = ((a_{ij}))$, where $a_{ij}$ represents the payoff to player 1 if player 1 chooses row $i$ and player 2 chooses column $j$. The strategies of player 1 are denoted by $x_i$, which in turn represents the probability of player 1 choosing row $i$. Similarly, the strategies of player 2 are denoted by $y_j$. 
+
+The mixed extension of the matrix game involves finding the **optimal strategies** for both players that maximize the payoff of player 1 and minimizes the payoff of player 2 simultaneously. Introducing a dummy variable $z$, the problem of obtaining the value of the mixed extension of the matrix game can be formulated as the following optimization problem: 
+
+\begin{center}
+\textbf{Maximize} $z$
+\end{center}
+
+subject to:
+
+-   $\sum_{i=1}^{4}x_i=1$ (sum of probabilities of strategies of player 1 is 1)
+-   $\sum_{j=1}^{4}y_j=1$ (sum of probabilities of strategies of player 2 is 1)
+-   $x_i \geq 0 \quad i = 1,2,3,4$ (probabilities are non-negative)
+-   $y_j \geq 0 \quad j = 1,2,3,4$ (probabilities are non-negative)
+-   $z \leq \sum_{i=1}^{4}\sum_{j=1}^{4}a_{ij}x_iy_j$ (maximize payoff of player 1) 
+-   $z \geq \sum_{i=1}^{4}\sum_{j=1}^{4}a_{ij}x_iy_j$ (minimize payoff of player 2)
+
+
+
+This can be equivalently formulated as (by removing $z$):
+
+\begin{center}
+\textbf{Maximize} $\sum_{i=1}^{4}\sum_{j=1}^{4}a_{ij}x_iy_j$
+\end{center}
+
+subject to:
+
+-   $\sum_{i=1}^{4}x_i=1$ (sum of probabilities of strategies of player 1 is 1)
+-   $\sum_{j=1}^{4}y_j=1$ (sum of probabilities of strategies of player 2 is 1)
+-   $x_i \geq 0 \quad i = 1,2,3,4$ (probabilities are non-negative)
+-   $y_j \geq 0 \quad j = 1,2,3,4$ (probabilities are non-negative)
+
+The **R** code for performing the following task is given below:
+
+```{r,echo=TRUE}
+
+## matrix game A : same as printed earlier
+
+
+## objective function ....
+# formed as minimization problem
+objective_function <- function(x){
+  return(-(x[1:4]%*%A%*%x[5:8]))
+}
+
+
+## constraints ....
+# Constraint: Probability vectors sum is 1
+constraints <- function(x){
+  c(sum(x[1:4])-1, # constraint 1
+    sum(x[5:8])-1) # constraint 2
+}
+## bounds ....
+# probabilities are in [0,1]
+l = rep(0,8) 
+u = rep(1,8)
+
+## initial guess ....
+x0 = c(rep(1/4,4),rep(1/4,4))
+
+
+# Perform constrained optimization ....
+result=nloptr::slsqp(x0,objective_function,
+             lower=l,upper=u,heq=constraints)
+value = -result$value
+
+```
+
+Implementing the above code, we get $v(A)$ as follows
+```{r}
+value
+```
+
+
+\small
+> $Note::$ **nloptr::slsqp()** uses Sequential Least Squares Programming (SLSQP) for solving minimization problems. SLSQP is a gradient-based method which iteratively approximates the objective and constraint functions using quadratic models and solves a sequence of constrained quadratic subproblems to find the optimal solution.
+
+\normalsize
+\newpage
+
+#   Problem 2. 
+
+There is a set of players $N = \{1,2,3,...,10\}$ and it is divided into two subsets $L$ and $R$, such that $L \neq \phi$, $R \neq \phi$, $L \cap R = \phi$ and $L \cup R = N$. Each player of $L$ has $p$ left hand gloves and no right hand glove. Similarly, each player of $R$ has $q$ right hand gloves and no left hand glove. Here, $p,q \in \mathbb{N}$. It is given that a single glove is worth nothing and a right-left pair of gloves is worth Rs. 50.
+
+Let $|L|$ and $|R|$ denote the cardinalities of the subsets $L$ and $R$ respectively. We note that $|L|,|R| \in \mathbb{N}$
+
+##    (i): Characteristic Function
+
+For any coalition of players $S$, the characteristic function will be:
+
+\[
+\fbox{$\boldsymbol{v(S) = 50.\min\{p|L \cap S|, q|R \cap S|\}}$}
+\]
+
+
+**Justification:** Assuming that each left glove has its own specific right glove, the total number of _(complete)_ pairs which can be formed by each member of $S$ would be the smaller number of common members between $S$ and $L$ or that with $R$. Now, since each member of $L$ has $p$ left gloves and correspondingly each member of $R$ has $q$ right gloves, the above characteristic function is formulated. 
+
+##    (ii): Superadditivity of Characteristic Function
+
+To show: $\boldsymbol{v(S \cup T) \geq v(S) + v(T)}$ for $S \cap T = \phi$
+
+$$
+\begin{aligned}
+v(S \cup T) &= 50.\min\{p|L\cap(S\cup T)|,q|R \cap (S \cup T)|\} \\
+&= 50.\min\{p|(L\cap S)\cup(L\cap T)|, q|(R\cap S)\cup(R \cap T)|\} \\
+&\geq 50.\min\{p|L \cap S| + p|L\cap T|, q|R \cap S| + q|R\cap T| \} \\
+&\geq 50.\min\{p|L \cap S|,q|R \cap S|\} + 50.\min\{p|L \cap T|,q|R \cap T| \} \\
+&= v(S) + v(T)
+\end{aligned}
+$$
+This proves that $v(S)$ is indeed **superadditive**.
+
+
+##    (iii)
+
+
+We assume that $|L| = |R| = 5$. Also, 
+
+$$p+q = 2[\lfloor{\frac{1}{2}}\rfloor+4] = 2[0+4] = 8$$
+
+$$\implies q = 8-p$$
+
+Our characteristic function thus becomes, 
+$$v(S) = 50\times\min\{p|L \cap S|, (8-p)|R \cap S|\}$$
+Now, we have to compute $\boldsymbol{f(p):=\frac{1}{2^{10}-1}\sum_{S \subseteq N, S \neq \phi}\frac{v_p(S)}{|S|}}$. Let us first try to compute $f(p)$ analytically. 
+
+Let us consider a specific non-empty subset $S=S_1$ such that $|S_1| = k \quad 1 \leq k \leq 10$. Since the two coalitions $L$ and $R$ are of fixed size 5, the following situations may arise:
+
+-  $|L\cap S| = k$ and $|R \cap S| = 0$ (i.e., all members of $S$ are common with $L$). The total number of possible subsets in which this is possible is $5 \choose k$$5 \choose 0$ and the total payoff would be $50\times\min\{kp,0.q\} = 50\times0 = 0$
+
+-  $|L\cap S| = k-1$ and $|R \cap S| = 1$. The total number of possible subsets in which this is possible is $5 \choose k-1$$5 \choose 1$ and the total payoff would be $50\times\min\{(k-1)p,1.q\}$. 
+
+\begin{center}
+...
+\end{center}
+
+-  $|L\cap S| = 0$ and $|R \cap S| = k$. The total number of possible subsets in which this is possible is $5 \choose 0$$5 \choose k$ and the total payoff would be $50\times\min\{0.p,kq\} = 0$. 
+
+Generalizing this idea for all subsets $S\subseteq N,S \neq \phi$ (i.e. k=1,2,...,10), we get the following expression for $f(p)$:
+
+
+
+\[
+\fbox{$\boldsymbol{f(p) = \frac{50}{2^{10}-1}\sum_{k=1}^{10}\frac{1}{k}\sum_{j=1}^{k}{5 \choose j}{5 \choose|k-j|}\min\{jp,|k-j|(8-p)\}}, \quad 1 \leq p \leq 7$}
+\]
+
+
+Note: ${n \choose k} = 0$ when $k > n$.
+
+
+We then use **R** to find the maximum value of $f(p)$. The following code carries out the necessary computation. 
+
+\small
+```{r, echo=T}
+L = 1:5 
+R = 6:10
+p_plus_q = 2*(floor(m/2)+4) 
+
+## Characteristic function v_p(S) ....
+v_p = function(p,S){
+  return(50 * min(p*length(intersect(S,L)), (p_plus_q-p)*length(intersect(S,R))))
+} 
+
+## the function to be computed ....
+library(foreach)
+f = function(p){
+  # sum over possible values of k
+  sum_v = foreach(k = 1:10,.combine = sum) %do% {
+    subsets = combn(10,k,simplify = F)
+    # v_p(p,S)/k over all possible subsets of size k
+    (sapply(subsets, function(S) v_p(p,S)))/k
+  }
+  # return value  
+  return(sum_v/(2^10 - 1))
+}
+
+
+```
+\normalsize
+
+We want to check for which value of $p$ if $f(p)$ maximum. It reveals that $f(p)$ is maximum when $\boldsymbol{p = \frac{p+q}2 =4}$, the middlemost value in the range of variation of $p$.
+
+```{r, out.height="68%", out.width="70%", fig.align='center'}
+# Plot
+p = 1:(p_plus_q-1)
+f_p = sapply(p, function(p) f(p)) 
+lattice::xyplot(f_p~p, grid = T, xlab = "p", ylab = "f(p)",
+                main = "Values of f(p) vs p", pch = 19,
+                type = c("p","l"), lwd = 2)
+
+```
+
+
+The following table lists the values of $f(p)$ against $p$. 
+
+```{r, echo=FALSE, fig.cap = "Values of f(p)"}
+
+data           = data.frame(p,f_p)
+colnames(data) = c("p", "f(p)")
+knitr::kable(data)
+```
+
+---------------------------------
