@@ -1,0 +1,261 @@
+---
+title: "Statistical Computing II Assignment"
+author: "RAMIT NANDI || MD2211"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    toc: False
+    df_print: kable
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,
+                      message = F,
+                      warning = F,
+                      fig.align = "center")
+```
+
+
+# Question
+
+**If \(X_1,...,X_{n + 1}\) are independent exponentially distributed random variables with a common mean of 1, then we need to verify that \(X_{(n+1)} - X_{(1)}\) has the density
+\[ n\sum_{k = 1}^{n} (-1)^{k-1} {n-1 \choose k-1}e^{-kx} \]
+This is also the density of the sum \(Y_1 + Y_2 +....+ Y_n\) of independent exponentially distributed random variables \(Y_i\) with respective means \(1, \frac{1}{2}, ..., \frac{1}{n}\). In addition we need to compare the following approximations of the above density:**
+
+1. **Approximation Using Edgeworth Expansions 
+   \[ g(x) = \phi(x)\left[1 + \frac{\rho_3 H_3(x)}{6\sqrt{n}} + \frac{\rho_4 H_4(x)}{24n} + \frac{\rho_3^2 H_3(x)}{72n} + O_{P}(n^{-3/2})\right] \]**
+
+2. **Using Saddle Point Approximation
+   \[ g(x_0) = \frac{e^{-t_0 x_0 + nK(t_0)}}{\sqrt{2\pi K^{''}(t_0)}}\left[1 + O(n^{-1}) \right] \]**
+
+3. **Using Refined Saddle Point Approximation
+   \[ g(x_0) = \frac{e^{-t_0 x_0 + nK(t_0)}}{\sqrt{2\pi K^{''}(t_0)}}\left[1 + \frac{3\rho_4(t_0) - 5\rho^2_3(t_0)}{24n} + O(n^{-1}) \right] \]**
+
+
+\newpage 
+
+# Answer
+
+We will first show that the density of \( X_{(n+1)} - X_{(1)} \) has the form mentioned in question. To find the distribution of \( X_{(n+1)} - X_{(1)} \), we start with the joint density of \( X_{(1)} \) and \( X_{(n+1)} \).
+
+The joint density of \( X_{(1)} \) and \( X_{(n+1)} \) is given by:
+
+\[ f_{X_{(1)}, X_{(n+1)}}(u, v) = n(n+1)e^{-(u+v)}(e^{-u} - e^{-v})^{n-1} \quad \text{for } 0 < u < v < \infty. \]
+
+Then We take the following transformation of variables: \( Y_1 = X_{(n+1)} - X_{(1)}, Y_2 = X_{(1)} \).
+
+
+The Jacobian of this transformation is given by 
+
+\[ J = \left| \frac{\partial (X_{(1)}, X_{(n+1)})}{\partial (Y_1, Y_2)} \right| = \left| \begin{matrix} \frac{\partial X_{(1)}}{\partial Y_1} & \frac{\partial X_{(1)}}{\partial Y_2} \\ \frac{\partial X_{(n+1)}}{\partial Y_1} & \frac{\partial X_{(n+1)}}{\partial Y_2} \end{matrix} \right| = \left| \begin{matrix} 0 & 1 \\ 1 & 1 \end{matrix} \right| = \left(0 \times 1 - 1 \times 1 \right) = -1. \]
+
+Then the joint density of \((Y_1, Y_2)\) is given by
+
+\[ f_{Y_1, Y_2}(y_1, y_2) = n(n+1) e^{-(y_2 + (y_1 + y_2))} \left( e^{-y_2} - e^{-(y_1 + y_2)} \right)^{n-1} \cdot 1. \]
+
+After simplification, we have the following form -
+
+\[ f_{Y_1, Y_2}(y_1, y_2) = n(n+1) e^{-y_1} e^{-(n+1)y_2} (1 - e^{-y_1})^{n-1}. \]
+
+Now, to obtain marginal density of \( Y_1 \), we integrate \(f_{Y_1, Y_2}(y_1, y_2) \) w.r.t \(y_2\).
+
+\[ f_{Y_1}(y_1) = \int_0^\infty n(n+1) e^{-y_1} e^{-(n+1)y_2} (1 - e^{-y_1})^{n-1} \, dy_2. \]
+
+\[ f_{Y_1}(y_1) = n(n+1) e^{-y_1} (1 - e^{-y_1})^{n-1} \int_0^\infty e^{-(n+1)y_2} \, dy_2. \]
+
+The integral is the PDF of an exponential distribution with rate \( n+1 \), so it equals \( 1/(n+1)\):
+
+\[ \int_0^\infty e^{-(n+1)y_2} \, dy_2 = \frac{1}{(n+1)} \]
+
+Thus we have the pdf of \( Y_1 = X_{(n+1)} - X_{(1)} \) as 
+
+\[f_{Y_1}(y_1) = ne^{-y_1} (1 - e^{-y_1})^{n-1}, \text{for} \ y_1 > 0\]
+
+Now, we need to show that \(f_{Y_1}(x) = n\sum_{k = 1}^{n} (-1)^{k-1} {n-1 \choose k-1}e^{-kx}\). This follows easily by simplifying the summation.
+
+\[ n\sum_{k = 1}^{n} (-1)^{k-1} {n-1 \choose k-1}e^{-kx}  = ne^{-x}\sum_{k = 1}^{n} (-1)^{k-1} {n-1 \choose k-1}e^{-(k-1)x}\]
+\[= ne^{-x}\sum_{u = o}^{n-1} (-1)^{u} {n-1 \choose u}e^{-ux} = ne^{-x}(1 - e^{-x})^{n-1}\]
+
+Thus we have verified that that pdf of \(X_{(n+1)} - X_{(1)}\) has the form mentioned in question.
+
+
+We know the approximations for the density of the sum of IID random variables. We use the fact that the density of \(X_{(n+1)} - X_{(1)}\) is the same as the density of the sum of independent random variables \(Y_1 + Y_2 + \cdots + Y_n\), where \(Y_i\) are exponentially distributed with mean \(\frac{1}{i}\). Although these variables are not identically distributed, we will test the validity of the approximations under this slight deviation.
+
+To find these approximations, we first determine the cumulant generating function of \(S_n = Y_1 + Y_2 + \cdots + Y_n\). If \(K_n(t)\) is the cumulant generating function, it is defined as \( K_n(t) = \log(M_n(t)) \). Where \(M_n(t)\) is the moment generating function of \(S_n\):
+\[ M_n(t) = \mathbb{E}[e^{tS_n}] = \prod_{j=1}^{n} \frac{j}{j - t} \quad \forall t < \text{min}\{1,2,..n\} \]
+
+Since \(Y_j\) are independent and exponentially distributed with mean \(\frac{1}{j}\), their MGF is \(\mathbb{E}[e^{tY_j}] = \frac{j}{j - t}\). Thus, the cumulant generating function \(K_n(t)\) is given by 
+\[ K_n(t) = -\sum_{j=1}^{n} \ln(1 - t/j) \]
+
+Taking \(nK(t) = K_n(t)\), we calculate the \(m\)-th derivative as:
+\[ nK^{(m)}(t) = \frac{d^{m}(nK_n(t))}{dt^m} = (m-1)!\sum_{j=1}^{n} \frac{1}{(j - t)^m} \]
+
+Using these we can compute the quantities \(\rho_i\) for the approximations.
+
+### Related Calculations
+
+1. To calculate \(\rho_l = \frac{\kappa_l}{\sigma^l}\) for \(l = 3, 4\), we use:
+\[ \rho_l = \frac{nK^{(l)}(0)}{[nK^{''}(0)]^{l/2}} \]
+where \(H_n\) denotes the Hermite polynomial of order \(n\). For the approximation at \(x_0\), we use the standardized version \(x = \frac{x_0 - nK^{'}(0)}{\sqrt{nK^{''}(0)}}\), and then adjust by dividing by suitable constant.
+
+2. To get the saddle point approximation at \(x_0\), solve the saddle point equation \(nK^{'}(t) = x_0\) numerically. After finding \(t_0\), we compute the normalized cumulants:
+\[ \rho_l = \frac{nK^{(l)}(t_0)}{[nK^{''}(t_0)]^{l/2}} \]
+
+### Results
+
+We calculated the approximations for \(n = 10\) and compared them with the true density given by \(g_n(x) = n\sum_{k = 1}^{n} (-1)^{k-1} {n-1 \choose k-1}e^{-kx}\). We also considered a fixed set of \(x\) values, ranging from 0.5 to 10 in steps of 0.5. We have created a table showing the true density values and the approximations for each case. Also the Percentage Error 
+$$100 \times |\text{True value} - \text{Approx.}|/\text{True value}$$ 
+are reported in a separate table.
+
+
+\small
+
+```{r,echo=FALSE}
+library(kableExtra)
+df = readRDS("Data.rds")
+knitr::kable(df, caption = "True density vs Approximations")
+```
+\normalsize
+
+\small
+```{r}
+Errors = 100*abs(df[,3:5]-df$`True Value`)/df$`True Value`
+Errors['x'] = df$x
+knitr::kable(Errors[,c(4,1:3)], caption = "Percentage errors")
+
+```
+\normalsize
+
+#### Comment:
+
+In Table 1 and Table2, it is evident that Saddle Point approximations generally provide more accurate results compared to the Edgeworth expansion, except near the mean value \(\sum_{i = 1}^{10}1/j \approx 2.93\). Particularly for small values of \(x\) and in the tail regions, the Saddle Point approximations perform significantly better. This is due to the fact that the \(Y_j\)'s have highly variable variances, making a simple normal approximation based on the central limit theorem less reliable.
+
+
+```{r,out.height="55%"}
+
+# Use matplot to plot the columns
+matplot(df$x, df[,-1], 
+        type = c('p','l','l','l'),  
+        xlab = "x", 
+        ylab = "g(x)",
+        main = "True density vs Approximations",
+        lty = c(1,2,1,3),
+        lwd = c(0.8,0.8,0.8,2),
+        pch = 16,
+        col = c('black','green','orange','blue'))  
+abline(v=sum(1/(1:10)),col='grey',lty=3,lwd=1.7)
+mtext('x=2.929',side=2,line=-7)
+
+legend("topright", legend = colnames(df[,-1]), col = c('black','green','orange','blue'),lty=c(NA,2,1,3),pch=c(16,NA,NA,NA),lwd = c(NA,0.8,0.8,0.8,1.5))
+
+```
+
+
+
+
+
+
+ 
+
+## Codes:
+
+
+```{r,echo=T,eval=FALSE}
+## Method 0 ........................
+gn <- function(x, n){
+  k = 1:n
+  n*sum(((-1)^(k-1))*choose(n-1, k-1)*exp(-k * x))
+}
+
+
+## Method 1 ........................
+edgeworth_approx <- function(x0, n){
+  Kd = .cumulant_derivative(0, n, m=1)
+  Kdd = .cumulant_derivative(0, n, m=2)
+  
+  y0 = (x0 - Kd) / sqrt(Kdd)
+  rho_3 = .cumulant_derivative(0, n, m=3) / (Kdd)^(3/2)
+  rho_4 <- .cumulant_derivative(0, n, m=4) / (Kdd)^(4/2)
+  
+  factor = (rho_3 * .Hermite_polynomial(y0, n = 3) / (6 * sqrt(n))) + 
+            (rho_4 * .Hermite_polynomial(y0, n = 4) / (24 * n)) + 
+            ((rho_3^2) * .Hermite_polynomial(y0, n = 6) / (72 * n))
+  
+  return(dnorm(y0) * (1 + factor) / sqrt(Kdd))
+}
+
+
+## Method 2 ........................
+saddle_point_approx <- function(x0, n) {
+  t0 = uniroot(f = .saddle_point_eq(x0,n), 
+               interval = c(-400,1),
+                extendInt = "yes", tol = 1e-02)$root
+  
+  factor1 = exp(-t0 * x0 + .cumulant_derivative(t0, n, m=0))
+  factor2 = sqrt(2 * pi * .cumulant_derivative(t0, n, m=2))
+  
+  return(factor1 / factor2)
+}
+
+
+## Method 3 ........................
+saddle_point_refined_approx <- function(x0, n) {
+  t0 = uniroot(f = .saddle_point_eq(x0,n), 
+               interval = c(-400,1),
+                extendInt = "yes", tol = 1e-02)$root
+  
+  Kdd_p <- .cumulant_derivative(t0, n, m=2)
+  rho_3 <- .cumulant_derivative(t0, n, m=3) / (Kdd_p)^(3/2)
+  rho_4 <- .cumulant_derivative(t0, n, m=4) / (Kdd_p)^(4/2)
+  
+  factor1 <- exp(-t0 * x0 + .cumulant_derivative(t0, n, m=0))
+  factor2 <- sqrt(2 * pi * .cumulant_derivative(t0, n, m=2))
+  factor3 <- (3 * rho_4 - 5 * (rho_3^2)) / (24 * n)
+  
+  return((1 + factor3) * factor1 / factor2)
+}
+
+
+## Useful functions ======================================
+.Hermite_polynomial <- function(x, n){
+  H = c(1,x,NA)
+  if(n>1){
+      for(j in 2:n){
+        H[(j%%3)+1] = x*H[((j-1)%%3)+1] - (j-1)*H[((j-2)%%3)+1]
+        # we don't want to use recursive function call 
+        # instead we keep track of the past two values 
+        # to avoid redundant calculation
+      }
+  }
+  return(H[(n%%3)+1])
+}
+
+.cumulant_derivative <- function(t, n, m=0){
+  ifelse(m,
+         factorial(m-1)* sum(1/(((1:n)-t)^m)),
+         -sum(log(1 - t/(1:n))))
+}
+
+.saddle_point_eq <- function(x0, n) {
+  return(function(t) return(sum(1/((1:n)-t))-x0))
+}
+
+
+
+```
+
+
+```{r,echo=FALSE,eval=FALSE}
+n0 <- 10
+x <- seq(0.5,10,by = 0.5)
+
+y0 <- vapply(x, FUN = gn, n = n0, FUN.VALUE = 2)
+y1 <- vapply(x, FUN = edgeworth_approx, n = n0, FUN.VALUE = 2)
+y2 <- vapply(x, FUN = saddle_point_approx, n = n0, FUN.VALUE = 2)
+y3 <- vapply(x, FUN = saddle_point_refined_approx, n = n0, FUN.VALUE = 2)
+
+Data <- data.frame(x, y0, y1, y2, y3)
+colnames(Data) <- c("x", "True Value", "Edgeworth Expansion", "Saddle Point", "Refined Saddle Point")
+saveRDS(Data,"Data.rds")
+```
