@@ -1,0 +1,772 @@
+---
+title: "Prediction of Resale Value of Used Cars"
+author: "Ramit Nandi , roll- MD2211"
+date: "12-Nov-2022"
+output: beamer_presentation
+theme: "Singapore"
+colortheme: "Seahorse"
+---
+
+
+```{r,echo=FALSE,message=FALSE}
+library(readr)
+library(lattice)
+library(latticeExtra)
+library(corrplot)
+library(car)
+library(MASS)
+library(caTools)
+library(leaps)
+library(glmnet)
+library(gridExtra)
+#data---------------------------------------------
+setwd("F:\\PROJECTWORK_DEEPAYAN")
+read_csv("car data.csv")->Data
+attach(Data)
+```
+
+
+
+
+# Dataset Description
+ 
+
+
+
+##
+\
+-  Here our Data is collected from[https://www.kaggle.com/datasets/vijayaadithyanvg/car-price-predictionused-cars](https://www.kaggle.com/datasets/vijayaadithyanvg/car-price-predictionused-cars)
+```{r,echo=TRUE,message=FALSE}
+dim(Data)
+```
+\tiny
+```{r}
+summary(is.na(Data))
+```
+\
+
+
+
+
+
+##
+\tiny
+```{r,echo=TRUE,message=FALSE}
+head(Data[,1:5])
+```
+```{r,echo=TRUE,message=FALSE}
+head(Data[,c(1,6:9)])
+```
+
+
+
+
+
+# EDA
+
+
+
+
+
+## Selling_Price : the response
+\
+\tiny
+```{r,echo=TRUE,message=FALSE}
+summary(Selling_Price)
+```
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="60%"}
+
+histogram(Selling_Price,col="red")  #response is positive skewed
+
+```
+
+
+
+
+## Selling_Price
+```{r,echo=FALSE,message=FALSE,fig.align='left',out.width="80%",out.height="42%"}
+
+boxplot(Selling_Price,horizontal = T,xlab="Selling_Price")  #has outliers
+
+```
+```{r,echo=FALSE,message=FALSE,fig.align='right',out.width="80%",out.height="45%"}
+
+boxplot(cbind(sqrt(Selling_Price),Selling_Price^(1/3),log(Selling_Price)),names=c("sq. root","cube root","log"))  #no outliers for log
+
+```
+
+
+
+
+
+## possible Numerical predictors
+:::: {.columns}
+::: {.column}
+
+```{r,echo=FALSE,message=FALSE,fig.align='left',out.width="90%",out.height="30%"}
+
+histogram(Present_Price)  #same as selling price
+
+```
+:::
+::: {.column}
+
+```{r,echo=FALSE,message=FALSE,fig.align='left',out.width="90%",out.height="30%"}
+
+histogram(Driven_kms)
+
+```
+:::
+::::
+
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="30%"}
+
+plot(table(Year),col="darkgrey") #very few obs available in past or most currernt year compared to intermediate years
+
+```
+
+
+
+## possible Categorical predictors
+\
+```{r,echo=FALSE,message=FALSE,fig.show='hold',fig.align='left',out.width="40%",out.height="30%"}
+plot(table(Fuel_Type),col="darkred")  #most obs from petrol, negligible for CNG
+
+plot(table(Selling_type),col="blue")  #not enough information for owner>0
+
+```
+
+```{r,echo=FALSE,message=FALSE,fig.align='right',fig.show='hold',out.width="40%",out.height="30%"}
+plot(table(Transmission),col="blue") #very few obs for automatic compared to manual
+
+plot(table(Owner),col="darkred")  #not enough information for owner>0
+
+```
+
+
+
+
+
+## Selling_Price vs Present_Price
+
+
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="75%"}
+
+xyplot(Selling_Price~Present_Price,type=c("p","r"),col.line="red",lwd=1.5)+layer(panel.smoother(x,y,method="loess",se=F,col.line = "black")) #most observations in a small region of plot,due to outliers 
+
+```
+- points are overlapped in a small region
+
+
+
+## Selling_Price vs Present_Price 
+- linear relationship is now more clear
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="80%"}
+
+xyplot(log(Selling_Price)~log(Present_Price),type=c("p","r"),col.line="red",grid=T,lwd=1.5)+layer(panel.smoother(x,y,method="loess",se=F,col.line = "black")) #most observations in a small region of plot,due to outliers 
+
+```
+
+
+
+
+
+## Selling_Price vs Year
+
+
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="75%"}
+
+xyplot(log(Selling_Price)~Year,type=c("p","r"),grid=T,col.line="red",lwd=1.5)+layer(panel.smoother(x,y,method="loess",se=F,col.line = "black")) #strong linear relationship
+
+```
+- older car gets lower resale value
+
+
+
+
+
+## Selling_Price vs Driven_kms
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="80%"}
+
+xyplot(log(Selling_Price)~log(Driven_kms),grid=T,type=c("p","r"),col.line="red",lwd=1.5)+layer(panel.smoother(x,y,method="loess",se=F,col.line = "black")) #little linear relationship
+
+```
+
+
+##
+\
+
+- a car that is driven more, should get lower resale value
+\
+- here we get positive slope between log(Selling_Price) and log(Driven_kms)
+\
+- may be because there are hidden grouping variables 
+
+
+
+##
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="80%"}
+
+xyplot(log(Selling_Price)~log(Driven_kms),grid=T,group=Fuel_Type,auto.key = T)+layer(panel.abline(lm(log(Selling_Price[Fuel_Type=="CNG"])~log(Driven_kms[Fuel_Type=="CNG"])),col="blue"))+layer(panel.abline(lm(log(Selling_Price[Fuel_Type=="Diesel"])~log(Driven_kms[Fuel_Type=="Diesel"])),col="pink",lwd=2))+layer(panel.abline(lm(log(Selling_Price[Fuel_Type=="Petrol"])~log(Driven_kms[Fuel_Type=="Petrol"])),col="darkgreen")) 
+
+```
+
+
+## Selling_Price vs Fuel_Type
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="75%"}
+
+xyplot(log(Selling_Price)~log(Present_Price),grid=T,groups =Fuel_Type,auto.key = T)
+
+```
+- Diesel cars get higher resale value than petrol
+
+
+## Selling_Price vs Transmission
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="75%"}
+
+xyplot(log(Selling_Price)~log(Present_Price),grid=T,groups =Transmission,auto.key = T)
+
+```
+- cars with automatic transmission get higher value
+
+
+## Selling_Price vs Selling_Type
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="75%"}
+
+xyplot(log(Selling_Price)~log(Present_Price),groups =Selling_type,auto.key = T)
+
+```
+- cars sold through dealer , get higher price
+
+## Correlation Structure
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="75%"}
+X<-cbind(logpresent=log(Present_Price),Year,logkms=log(Driven_kms),
+         model.matrix(~0+Fuel_Type),
+         model.matrix(~0+Transmission),
+         model.matrix(~0+Selling_type)) 
+logselling=log(Selling_Price)
+#k-1 dummy var. for k levels
+corrplot(cor(cbind(logselling,X[,c(-4,-7,-9)])),method="color",addCoef.col = T,diag=F) #strong collinearity between two fuel type as indicator_petrol+indicator_diesel=1,indicator_cng=0 for most obs
+
+```
+- notice the correlation between two fuel types
+
+## after altering the choice of Fuel_Type
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="80%"}
+
+corrplot(cor(cbind(logselling,X[,c(-5,-7,-9)]->x)),method="color",addCoef.col = T,diag=F) #change the choice of dummy variables for collinearity
+x1=x[,1]
+x2=x[,2]
+x3=x[,3]
+x4=x[,4]
+x5=x[,5]
+x6=x[,6]
+x7=x[,7]
+```
+
+## why such behavior in correlation matrix?
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="50%",out.height="50%"}
+plot(table(Fuel_Type),col="darkred")  #most obs from petrol, negligible for CNG
+
+```
+
+
+# REGRESSION
+### starting with the Full Model
+
+\Large
+$$ Y = \alpha + \beta_1X_1+ \beta_2X_2+ \beta_3X_3+ \beta_4X_4+ \beta_5X_5 + \beta_6X_6 + \beta_7X_7 + \varepsilon $$
+\
+\tiny
+ 
+\
+-  $Y$ = log(Selling_Price)
+\
+-  $X_1$= log(Present_Price)
+\
+-  $X_2$= Year
+\
+-  $X_3$= log(Driven_kms)
+\
+- $X_4$= Fuel_TypeCNG
+\
+-  $X_5$= Fuel_TypePetrol
+\
+-  $X_6$= TransmissionManual
+\
+-  $X_7$= Selling_typeIndividual
+
+
+
+
+
+
+
+
+##
+### OLS
+## summary of OLS fit
+\tiny
+```{r,echo=FALSE,message=FALSE}
+fm<-lm(logselling~x1+x2+x3+x4+x5+x6+x7)
+summary(fm)
+```
+
+## Residual Plots
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="60%"}
+xyplot(rstudent(fm)~fm$fitted.values,main="fitted vs residual",grid=T,type="p")+layer(panel.smoother(x,y,form=y~x,method = "loess",span=.75,se=T,col = "red",alpha.se = .1))   #little deviation from linearity?
+
+```
+
+
+## Residual Plots
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="60%"}
+xyplot(abs(rstudent(fm))~fm$fitted.values,main="fitted vs |residual|",grid=T,type="p")+layer(panel.smoother(x,y,form=y~x,method = "loess",span=.75,se=T,col = "red",alpha.se = .1))   #little deviation from linearity?
+
+```
+- non constant error variance
+
+## Residual Plots
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="60%"}
+qqPlot(rstudent(fm),distribution = "t",df=fm$df.residual-1,envelope = list(border=F),main="Q-Q plot of error",id=F) #heavy tailed?,but symmetric distn
+
+```
+
+## Residual Plots
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="60%"}
+dns<-function(x) dnorm(x)  #df is too high to distinguish between t & normal density
+densityplot(rstudent(fm),col.line="red",grid=T,main="densityplot of error")+layer(panel.curve(dns,col="black",lty=2)) #symmetric & unimodal
+
+```
+- not much deviation from normality
+
+
+## Unusual Observation 
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="60%"}
+id=c(19,36,86)
+Index=1:length(logselling) #a seq of size= sample size
+xyplot(hatvalues(fm) ~ rstudent(fm), grid = TRUE,col="red")+layer(panel.text(x[id], y[id], labels = Index[id], pos = 1, col = "grey50"))  
+
+```
+
+## Added Variable Plots
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="90%",out.height="88%"}
+avPlots(fm) 
+
+```
+
+## Component + Residual Plots
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="70%"}
+crPlots(fm,terms = ~.-x4-x5-x6-x7,main=NULL)
+```
+- linearity assumption holds
+
+
+##
+### WLS : correcrtion for heteroscedasticity 
+## estimating weights
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="60%"}
+xyplot(abs(rstudent(fm))~fm$fitted.values,main="fitted vs |residual|",grid=T,type="p")+layer(panel.smoother(x,y,form=y~x,method = "loess",span=.75,se=F,degree=1,col="red"))+layer(panel.abline(lm(abs(rstudent(fm))~fm$fitted.values)))
+lm(abs(rstudent(fm))~fm$fitted.values)->aprxsig
+wt= 1/(aprxsig$fitted.values)^2 #sigma approximated by least sq line of "|residual| vs fitted"
+
+```
+
+- estimate $\sigma$ by least square line
+
+## summary of WLS fit 
+\tiny
+```{r,echo=FALSE,message=FALSE}
+wm<-lm(logselling~x1+x2+x3+x4+x5+x6+x7,weights =wt)
+summary(wm)
+```
+
+
+## Residual Plots : heteroscedasticity rectified
+```{r,echo=FALSE,message=FALSE,fig.align='center',fig.show='hold',out.width="40%",out.height="50%"}
+xyplot((rstudent(wm))~wm$fitted.values,main="fitted vs residual",grid=T,type="p")+layer(panel.smoother(x,y,form=y~x,method = "loess",span=.75,se=T,col = "red",alpha.se = .1))   #little deviation from linearity?
+xyplot(abs(rstudent(wm))~wm$fitted.values,main="fitted vs |residual|",grid=T,type="p")+layer(panel.smoother(x,y,form=y~x,method = "loess",span=.8,se=T,col = "red",alpha.se = .1))   #little deviation from linearity?
+
+```
+
+## Density plot of errors
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="60%",out.height="60%"}
+densityplot(rstudent(wm),col.line="red",grid=T,main="densityplot of error")+layer(panel.curve(dns,col="grey")) #symmetric & unimodal
+
+```
+
+## The most unusual observations
+```{r,echo=FALSE,message=FALSE,fig.align='center',fig.show='hold',out.width="40%",out.height="50%"}
+id1<-(hatvalues(wm)>0.11)
+xyplot(hatvalues(wm)~Index,type = "h",col="blue")+layer(panel.text(x[id1], y[id1], labels = Index[id1], pos = 3, col = "grey50"))  #two extremely high leverage point , 19th 36th
+
+
+id2<-(cooks.distance(wm)>.04)
+xyplot(cooks.distance(wm)~Index,type = "h",col="blue")+layer(panel.text(x[id2], y[id2], labels = Index[id2], pos = 3, col = "grey50"))  #one high influence point , 86th
+
+
+```
+ 
+## The most unusual observations 
+```{r,echo=FALSE,message=FALSE,fig.align='center',fig.show='hold',out.width="60%",out.height="60%"}
+id=c(id1,id2)
+xyplot(hatvalues(wm) ~ rstudent(wm), grid = TRUE,col="red")+layer(panel.text(x[id], y[id], labels = Index[id], pos = 1, col = "grey50"))  
+
+```
+- observations 19th and 36th have extreme leverages, low residuals
+- observation 86th have moderate leverage , high residual
+
+
+## The most unsual observations : possible explanation
+\tiny
+```{r, echo=TRUE, message=FALSE}
+Data[c(19,36,86),-8]
+which(Fuel_Type=="CNG")
+Data[which(Fuel_Type=="Petrol" & Selling_type=="Individual" & Transmission=="Automatic"),1:5]
+
+```
+
+
+##  \[ R_{pred}^2 \]
+
+```{r, echo=FALSE, message=FALSE}
+Yhat=vector()
+ST=vector()
+for(i in 1:length(x1)){
+   y=logselling[-i]
+   z1=x1[-i]
+   z2=x2[-i]
+   z3=x3[-i]
+   z4=x4[-i]
+   z5=x5[-i]
+   z6=x6[-i]
+   z7=x7[-i]
+   w=wt[-i]
+   l=lm(y~z1+z2+z3+z4+z5+z6+z7,weights = w)
+   d=data.frame(z1=x1[i],z2=x2[i],z3=x3[i],z4=x4[i],z5=x5[i],z6=x6[i],z7=x7[i])
+   Yhat[i]= predict(l,newdata=d)
+   ST[i]= mean(y) }
+SE=sum((logselling-Yhat)^2)
+ST=sum((logselling-ST)^2)
+predictedRsq= 1- SE/ST
+predictedRsq
+
+```
+```{r,echo=FALSE,message=FALSE,fig.align='center',fig.show='hold',out.width="55%",out.height="55%"}
+xyplot(Yhat~logselling,grid=T,xlab = "actual log(Selling_Price)",ylab="predicted log(Selling_Price)",main="leave-one-out cross validation")+layer(panel.abline(a=0,b=1,col="red",lty=2)) 
+
+```
+
+
+
+
+# Finding sparser model, if any
+##
+- split the data in Train_Set:Test_Set = 80:20 for further calculations
+```{r, echo=FALSE,results='hide'}
+  set.seed(101) #in case we need to reproduce calculations
+  sample <- sample.split(logselling, SplitRatio = 0.8)
+  training_dataset<-as.data.frame(subset(cbind(logselling,x), sample == TRUE))  
+  testing_dataset<-as.data.frame(subset(cbind(logselling,x), sample == FALSE))
+  colnames(training_dataset)=c("y","x1","x2","x3","x4","x5","x6","x7")
+  colnames(testing_dataset)=c("y","x1","x2","x3","x4","x5","x6","x7")
+  wt2=wt[sample] 
+  
+  
+  nm0<-lm(y~x1+x2+x3+x4+x5+x6+x7,data=training_dataset,weights = wt2)
+    A= testing_dataset[,1] 
+
+```
+
+
+##
+### LASSO 
+## LASSO for various penalty parameter
+```{r,echo=FALSE,message=FALSE,fig.align='center',fig.show='hold',out.width="60%",out.height="42%"}
+  nm3<-with(training_dataset,glmnet(cbind(x1, x2, x3,x4,x5,x6,x7), y, alpha = 1))
+  plot(nm3, xvar = "lambda", label = TRUE) 
+  plot(nm3, xvar = "dev", label = TRUE)
+```
+
+## 
+\
+
+- as penalty increases , more coefficients are estimated as zero , at a cost of decrease in explained variability
+\
+- we take the max possible penalty (i.e. max sparsity) ,for which MSE is within 1 standard error of the minimum MSE (i.e. best fitting) 
+
+
+## optimum penalty
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="80%",out.height="80%"}
+nmlamda <- with(training_dataset,cv.glmnet(cbind(x1, x2, x3,x4,x5,x6,x7), y, alpha = 1,nfolds = 50))
+  lambda.min = nmlamda$lambda.min
+  lambda.1se = nmlamda$lambda.1se
+  plot(nmlamda) 
+  
+```
+
+
+
+
+## optimum LASSO model
+\small
+```{r, echo=FALSE,message=FALSE}
+nmlasso<-with(training_dataset,glmnet(cbind(x1, x2, x3,x4,x5,x6,x7), y, alpha = 1,lambda =lambda.1se ))
+coef(nmlasso)
+```
+\normalsize
+
+- so selected predictors are $X_1, X_2, X_3, X_5, X_7$
+
+
+
+##
+### Best Subset Selection
+## Best Subset Selection
+```{r,echo=FALSE,message=FALSE,fig.align='center',fig.show='hold',out.width="40%",out.height="40%"}
+reg.all <-regsubsets(y ~x1+x2+x3+x4+x5+x6+x7 ,data = training_dataset,weights = wt2)
+
+  xyplot(bic ~ seq_along(bic), data = summary(reg.all),ylab="BIC",xlab="number of predictor",main="best subset selection", grid = TRUE, type = "o", pch = 16)  
+  with(summary(reg.all), {
+    w <- which; is.na(w) <- (w == FALSE); wbic <- w * bic
+    levelplot(wbic, xlim = as.character(round(bic)),
+              scales = list(x = list(rot = 90)) ,col.regions=gray(50:90/100),xlab = "BIC", ylab = "terms in model",main="best subset selection")
+  })
+```
+- so selected predictors are $X_1, X_2, X_3, X_5, X_7$
+
+
+
+
+##
+### New Model with selected predictors
+\Large
+$$ Y = \alpha + \beta_1X_1+ \beta_2X_2+ \beta_3X_3 + \beta_5X_5 + \beta_7X_7 + \varepsilon $$
+
+
+
+## summary of fit
+\tiny
+```{r,echo=FALSE,message=FALSE}
+nm1<-lm(y~x1+x2+x3+x5+x7,data=training_dataset,weights = wt2)
+  summary(nm1)
+  P=predict(nm1,newdata = testing_dataset) 
+  MAPE= 100*mean(abs((P-A)/A))
+```
+\small
+```{r,echo=TRUE,message=FALSE}
+MAPE
+```
+
+
+
+## performance on Train Set and Test Set
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="40%",fig.show='hold',out.height="40%"}
+xyplot(training_dataset$y~nm1$fitted.values,grid=T,xlab="actual",ylab="fitted",main="Train_Data")+layer(panel.abline(a=0,b=1,col="red",lty=2))  
+xyplot(P~A,xlab="actual",ylab="predicted",grid=T,main="Test_Data")+layer(panel.abline(a=0,b=1,col="red",lty=2))
+
+
+```
+
+
+
+
+##
+### Can we reduce further ?
+## notice this plot again 
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="45%",fig.show='hold',out.height="45%"}
+xyplot(bic ~ seq_along(bic), data = summary(reg.all),ylab="BIC",xlab="number of predictor",main="best subset selection", grid = TRUE, type = "o", pch = 16)  
+with(summary(reg.all), {
+  w <- which; is.na(w) <- (w == FALSE); wbic <- w * bic
+  levelplot(wbic, xlim = as.character(round(bic)),
+            scales = list(x = list(rot = 90)) ,col.regions=gray(50:90/100),xlab = "BIC", ylab = "terms in model",main="best subset selection")
+})
+```
+
+- there is not much increase in BIC , when no. of predictors dropped to two from five
+\
+- so we can try the model with the best subset of size two , $X_1$ & $X_2$ 
+  
+
+
+##
+### Reduced Model
+\Large
+$$ Y = \alpha + \beta_1X_1+ \beta_2X_2+  \varepsilon $$
+
+
+
+## summary of fit 
+\tiny
+```{r,echo=FALSE,message=FALSE}
+nm2<-lm(y~x1+x2,data=training_dataset,weights = wt2)
+summary(nm2)
+P=predict(nm2,newdata = testing_dataset) 
+MAPE= 100*mean(abs((P-A)/A))
+```
+\small
+```{r,echo=TRUE,message=FALSE}
+MAPE
+```
+
+
+
+## Residual Plots : no severe violation of assumptions
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="40%",fig.show='hold',out.height="40%"}
+xyplot(rstudent(nm2)~nm2$fitted.values,main="fitted vs residual",grid=T,type="p")+
+    layer(panel.smoother(x,y,form=y~x,method = "loess",span=.75,se=T,col = "red",alpha.se = .1))   
+  xyplot(abs(rstudent(nm2))~nm2$fitted.values,main="fitted vs |residual|",grid=T,type="p")+
+    layer(panel.smoother(x,y,form=y~x,method = "loess",span=.75,degree=1,se=T,col="red",alpha.se = .1)) #homoscedastic
+  qqPlot(rstudent(nm2),distribution = "t",df=nm2$df.residual-1,envelope = list(border=F),main="Q-Q plot of error",id=F) #heavy tailed? negative skewed? 
+  densityplot(rstudent(nm2),col.line="red",grid=T,main="densityplot of error")+
+    layer(panel.curve(dns,lty=2)) #symmetric & unimodal
+```
+
+
+
+
+## performance
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="45%",fig.show='hold',out.height="45%"}
+xyplot(P~A,xlab="actual",ylab="predicted",grid=T,main="Test_Data")+
+    layer(panel.abline(a=0,b=1,col="red",lty=2))
+  xyplot(training_dataset$y~nm2$fitted.values,grid=T,xlab="actual",ylab="fitted",main="Train_Data")+
+    layer(panel.abline(a=0,b=1,col="red",lty=2))
+```
+- no apparent difference from the earlier ones
+
+## 
+\
+
+- The 'Principle of Parsimony' suggests we should use this simpler model
+\
+- By dropping number of predictors MAPE value has decreased. Earlier models were overfitted  
+
+
+
+## 95% prediction interval 
+```{r ,echo=FALSE,message=FALSE,warning=FALSE,fig.align='center',out.height="80%",out.width="80%"}
+knitr::include_graphics("C:/Users/Ramit/Desktop/Capture2.PNG")
+
+```
+
+
+
+
+# Conclusion
+##
+### It is enough to collect information about current price of a same car model and how old the used car is , to make reasonable prediction about its resale value
+
+
+
+
+## SUMMARY
+```{r ,echo=FALSE,message=FALSE,warning=FALSE,fig.align='center',out.height="80%",out.width="80%"}
+knitr::include_graphics("C:/Users/Ramit/Desktop/Capture.PNG")
+
+```
+
+
+
+
+# Appendix
+##
+### simulation for LASSO coefficients
+##
+```{r,echo=FALSE,results='hide',message=FALSE}
+random=sample(10000,500)
+coeff=matrix(nrow=500,ncol=7)
+for(i in 1:500){ #checking which variables are selected by lasso most of the time
+  set.seed(random[i])
+  
+  {
+    sample <- sample.split(logselling, SplitRatio = 0.8)
+    training_dataset<-as.data.frame(subset(cbind(logselling,x), sample == TRUE))  
+    testing_dataset<-as.data.frame(subset(cbind(logselling,x), sample == FALSE))
+    colnames(training_dataset)=c("y","x1","x2","x3","x4","x5","x6","x7")
+    colnames(testing_dataset)=c("y","x1","x2","x3","x4","x5","x6","x7")
+    wt2=wt[sample] } #splitting
+  
+  
+  {
+    lambda.1se = (with(training_dataset,cv.glmnet(cbind(x1, x2, x3,x4,x5,x6,x7), y, alpha = 1,nfolds = 50)))$lambda.1se
+    nmlasso<-with(training_dataset,glmnet(cbind(x1, x2, x3,x4,x5,x6,x7), y, alpha = 1,lambda =lambda.1se ))
+    coeff[i,]=coef(nmlasso)[-1]  }  #LASSO
+}
+```
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="95%",out.height="95%"}
+boxplot(coeff,col="blue",horizontal=F,names=c("b1","b2","b3","b4","b5","b6","b7"))
+abline(h=0,col="red",lty=2)
+
+```
+
+## 
+### comparison
+\large
+$$ Y = \alpha + \beta_1X_1+ \beta_2X_2+ \beta_3X_3+ \beta_5X_5 +\beta_7X_7 + \varepsilon  $$  
+\
+$$  vs  $$ 
+\
+$$ Y = \alpha + \beta_1X_1+ \beta_2X_2+ \varepsilon $$
+\
+
+##
+
+```{r,echo=FALSE,results='hide',message=FALSE}
+Rsq5=vector()
+MAPE5=vector()
+Rsq2=vector()
+MAPE2=vector()
+for(i in 1:500){
+  set.seed(random[i])
+  {
+    sample <- sample.split(logselling, SplitRatio = 0.8)
+    training_dataset<-as.data.frame(subset(cbind(logselling,x), sample == TRUE))  
+    testing_dataset<-as.data.frame(subset(cbind(logselling,x), sample == FALSE))
+    colnames(training_dataset)=c("y","x1","x2","x3","x4","x5","x6","x7")
+    colnames(testing_dataset)=c("y","x1","x2","x3","x4","x5","x6","x7")
+    wt2=wt[sample] } #splitting
+  
+  
+  {
+    nm0<-lm(y~x1+x2+x3+x5+x7,data=training_dataset,weights = wt2)
+    Rsq5[i]=summary(nm0)$r.sq
+    P=predict(nm0,newdata = testing_dataset) 
+    A= testing_dataset[,1] 
+    MAPE5[i]= 100*mean(abs((P-A)/A)) } #five parameters
+  
+  
+  {
+    nm1<-lm(y~x1+x2,data=training_dataset,weights = wt2)
+    Rsq2[i]=summary(nm1)$r.sq
+    P=predict(nm1,newdata = testing_dataset) 
+    MAPE2[i]= 100*mean(abs((P-A)/A)) } #two parameters
+  
+}
+
+```
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="75%",out.height="75%"}
+xyplot(Rsq2~Rsq5,grid=T,xlab="Rsq5",ylab="Rsq2",main="simulation of R square")+layer(panel.abline(a=0,b=1,col="red"))
+
+```
+
+
+
+
+
+## 
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="75%",out.height="75%"}
+xyplot(MAPE2~MAPE5,grid=T,xlab="MAPE5",ylab="MAPE2",main="simulation of MAPE")+layer(panel.abline(a=0,b=1,col="red"))
+
+```
+
+
+
+
+## 
+```{r,echo=FALSE,message=FALSE,fig.align='center',out.width="75%",out.height="75%"}
+densityplot(~MAPE2+MAPE5,grid=T,auto.key = T,xlab="MAPE",main="simulation of MAPE")
+
+```
+
+
+# -THANK YOU-
